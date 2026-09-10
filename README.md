@@ -61,6 +61,8 @@ README.md        # 项目概览
 docs/            # 操作与维护说明
 supabase/        # 数据库结构与权限变更脚本
 
+开发过程记录见 [docs/development-log.md](docs/development-log.md)，包括已完成版本、后续计划和协作注意事项。
+
 ## 已知限制
 
 - GitHub Pages 和 Supabase 都是海外服务，国内未使用代理时可能无法访问或较慢。
