@@ -492,18 +492,22 @@
 /* ============================== 常量 ============================== */
 const LS_KEY = "wishlist.v1";
 /*
-  上线前只需填这三项（见 README-上线步骤.md）。
+  上线配置见 README-上线步骤.md；公开模式见 README-公开模式步骤.md。
   publishableKey 是可以放在网页里的公开钥匙；绝不可填 service_role / secret key。
 */
 const SUPABASE_CONFIG = {
   url: "https://ldynpvdnjodrawvywego.supabase.co",
   publishableKey: "sb_publishable_7f_f7VdXgbJn7CUUDa3ycQ_86YcNN1X",
-  accountEmail: ""
+  accountEmail: "",
+  // "password" = 原来的密码登录；"public" = 任何人可直接打开和编辑同一份清单。
   accessMode: "public",
+  // 仅 public 模式必填：Authentication → Users 中清单账号那一行的 UID。
   publicDocumentUserId: "68ba3650-8d11-412e-be8b-e32a215fbb90"
 };
-const CLOUD_ENABLED = /^https:\/\//.test(SUPABASE_CONFIG.url) &&
-  !!SUPABASE_CONFIG.publishableKey && !!SUPABASE_CONFIG.accountEmail;
+const CLOUD_MODE = SUPABASE_CONFIG.accessMode === "public" ? "public" : "password";
+const PUBLIC_MODE = CLOUD_MODE === "public";
+const CLOUD_ENABLED = /^https:\/\//.test(SUPABASE_CONFIG.url) && !!SUPABASE_CONFIG.publishableKey &&
+  (PUBLIC_MODE ? !!SUPABASE_CONFIG.publicDocumentUserId : !!SUPABASE_CONFIG.accountEmail);
 let supabaseClient = null;
 let cloudUser = null;
 let remoteSaveTimer = null;
@@ -1495,7 +1499,7 @@ function showApp(){
   $$("appShell").classList.remove("hidden");
   $$("syncPlace").textContent = CLOUD_ENABLED ? "云端同步" : "本机浏览器";
   $$("storagePlace").textContent = CLOUD_ENABLED ? "云端（换设备登录也能继续使用）" : "本机浏览器";
-  $$("signOutBtn").classList.toggle("hidden", !CLOUD_ENABLED);
+  $$("signOutBtn").classList.toggle("hidden", !CLOUD_ENABLED || PUBLIC_MODE);
 }
 async function enterCloudApp(){
   try {
@@ -1519,6 +1523,12 @@ async function boot(){
     return;
   }
   supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.publishableKey);
+  if (PUBLIC_MODE) {
+    // 公开模式不创建登录会话：数据库策略只允许访问下面这个指定的文档。
+    cloudUser = { id: SUPABASE_CONFIG.publicDocumentUserId };
+    enterCloudApp();
+    return;
+  }
   $$("signOutBtn").addEventListener("click", async () => {
     await supabaseClient.auth.signOut();
     cloudUser = null;
