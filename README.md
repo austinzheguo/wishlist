@@ -17,7 +17,7 @@
   ↓
 GitHub Pages（index.html，静态网页）
   ↓
-Supabase（wishlist_data 表，存储一份 JSON 清单）
+Supabase（wishlist_items 逐条存储清单；wishlist_data 保留版本号与兼容快照）
 
 程序没有使用框架或构建工具；HTML、CSS 和 JavaScript 都在 index.html 中。
 
@@ -25,7 +25,7 @@ Supabase（wishlist_data 表，存储一份 JSON 清单）
 
 - 网页中的 Supabase publishable key 可以公开；它不是数据库管理员密码。
 - 绝不能把 Supabase 的 service_role / secret key、数据库密码或个人账号密码写入本仓库。
-- 当前公开模式下，RLS 仍启用，但匿名访客被允许读写指定的一份清单。
+- 当前公开模式下，RLS 仍启用，但匿名访客被允许读写指定清单中的逐条记录。
 - 同一页面的连续修改会按顺序同步，页面顶部会显示等待、同步成功或失败状态。
 - 页面顶部会显示最近一次成功同步的时间；页面重新打开后会读取云端记录的同步时间。
 - 当另一台设备或页面已先修改云端时，旧页面不会覆盖它；页面会提示“跨设备冲突”，把本机修改保留为可下载备份，并可选择读取最新版云端清单。
@@ -59,7 +59,7 @@ wishlist-backup-YYYY-MM-DD.json
 index.html       # 唯一正式网页源码
 README.md        # 项目概览
 docs/            # 操作与维护说明
-supabase/        # 数据库结构与权限变更脚本
+supabase/        # 数据库结构、权限与迁移脚本
 
 开发过程记录见 [docs/development-log.md](docs/development-log.md)，包括已完成版本、后续计划和协作注意事项。
 

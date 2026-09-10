@@ -6,7 +6,7 @@
 
 - 当前线上网站已使用 `accessMode: "public"`，不需要登录。
 - 当前配置使用的公开文档 UID 已记录在 `index.html` 与 [../supabase/002_enable_public_document.sql](../supabase/002_enable_public_document.sql)。UID 不是密码，可以公开。
-- RLS 仍然启用；匿名访客只能访问此 UID 对应的单份 `wishlist_data` 数据。
+- RLS 仍然启用；匿名访客只能访问此 UID 对应的 `wishlist_items` 记录和兼容快照。当前访客逐条记录仍可读写，后续可单独收紧为只允许新增。
 - 日常使用不需要再次运行 SQL。运行 SQL 会改变 Supabase 项目设置，只应在重新部署或明确调整权限时进行。
 
 ## 历史配置步骤（仅重新部署时参考）
@@ -14,7 +14,7 @@
 1. 先运行 `supabase/001_create_wishlist_data.sql`，创建表、启用 RLS，并保留密码模式的用户归属规则。
 2. 在 Supabase 的 **Authentication** → **Users** 中，确认清单账号的 UID。
 3. 复制 `supabase/002_enable_public_document.sql` 到 **SQL Editor**。该文件中的 UID 必须与上一步的清单账号 UID 一致；当前仓库中的值已对应当前线上项目。
-4. 执行后，在 **Database** → **Policies** → `wishlist_data` 中确认存在 3 条以 `Anonymous visitors` 开头的规则。
+4. 执行后，在 **Database** → **Policies** → `wishlist_data` 与 `wishlist_items` 中确认存在以 `Anonymous visitors` 开头的规则。
 
 ## 前端配置
 
