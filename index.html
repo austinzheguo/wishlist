@@ -61,6 +61,7 @@
   .sync-state.saved{color:var(--accent)}.sync-state.error{color:#ff9b9b}.sync-state.conflict{color:#ffbd6b}
   .sync-retry{color:#ffb4b4}.sync-retry:hover{color:#fff;background:rgba(255,107,107,.16)}
   .sync-conflict{color:#ffcf82}.sync-conflict:hover{color:#fff;background:rgba(255,183,77,.16)}
+  .sync-last{font-size:11px;color:var(--ink3);white-space:nowrap}
   .btn-add{display:inline-flex;align-items:center;gap:7px;background:var(--accent);color:var(--accent-ink);font-weight:700;
     padding:9px 17px;border-radius:11px;font-size:14px;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset,0 8px 20px -8px rgba(62,208,172,.6);
     transition:background .15s,transform .06s}
@@ -287,6 +288,9 @@
   .toast{background:var(--layer3);border:1px solid var(--line2);color:var(--ink);padding:9px 18px;border-radius:10px;font-size:13px;
     box-shadow:0 12px 30px -12px rgba(0,0,0,.7);animation:up .18s ease}
   .toast.err{border-color:rgba(255,107,107,.5);color:#ffb4b4}
+  .toast.undo{display:flex;align-items:center;gap:10px;border-color:rgba(255,207,92,.45)}
+  .toast.undo button{padding:4px 8px;border-radius:7px;background:rgba(255,207,92,.14);color:#ffe09a;font-size:12px;font-weight:700}
+  .toast.undo button:hover{background:rgba(255,207,92,.24);color:#fff}
   @keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
   footer{padding:4px 0 34px;text-align:center;color:var(--ink3);font-size:11.5px}
@@ -327,6 +331,7 @@
       <div class="top-right">
         <span class="sub" id="syncPlace"></span>
         <span class="sync-state hidden" id="syncState" role="status" aria-live="polite"></span>
+        <span class="sync-last hidden" id="syncLastSuccess" aria-live="polite"></span>
         <button class="text-btn sync-retry hidden" id="syncRetryBtn" type="button">重试同步</button>
         <button class="text-btn sync-conflict hidden" id="syncConflictBtn" type="button">处理冲突</button>
         <button class="text-btn" data-act="export">导出备份</button>
@@ -513,6 +518,7 @@
 /* ============================== 常量 ============================== */
 const LS_KEY = "wishlist.v1";
 const CONFLICT_KEY = LS_KEY + ".pending-conflict.v1";
+const DELETE_UNDO_KEY = LS_KEY + ".pending-delete.v1";
 /*
   上线配置见 README-上线步骤.md；公开模式见 README-公开模式步骤.md。
   publishableKey 是可以放在网页里的公开钥匙；绝不可填 service_role / secret key。
@@ -539,6 +545,9 @@ let failedRemoteSnapshot = null;
 let cloudRevision = null;
 let cloudUpdatedAt = null;
 let conflictSnapshot = null;
+let pendingDeleteUndo = null;
+let pendingDeleteTimer = null;
+let pendingDeleteTicker = null;
 const STATUS = {
   want:    { label: "想看",   cls: "" },
   doing:   { label: "进行中", cls: "st-进行中" },
@@ -804,6 +813,19 @@ function setSyncState(message, kind){
   retryBtn.classList.toggle("hidden", kind !== "error");
   conflictBtn.classList.toggle("hidden", kind !== "conflict");
 }
+function formatLastSyncTime(value){
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+}
+function renderLastSyncTime(){
+  const el = $$("syncLastSuccess");
+  if (!el) return;
+  const label = CLOUD_ENABLED ? formatLastSyncTime(cloudUpdatedAt) : "";
+  el.textContent = label ? "最近同步：" + label : "";
+  el.classList.toggle("hidden", !label);
+}
 function syncClock(){
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date());
 }
@@ -855,6 +877,7 @@ async function flushRemoteSave(){
     }
     cloudRevision = data.revision;
     cloudUpdatedAt = data.updated_at;
+    renderLastSyncTime();
     setSyncState("已同步 " + syncClock(), "saved");
   } catch (error) {
     console.warn("cloud save failed", error);
@@ -931,6 +954,7 @@ async function loadCloudData(){
   const doc = data && data.data;
   cloudRevision = data ? data.revision : null;
   cloudUpdatedAt = data ? data.updated_at : null;
+  renderLastSyncTime();
   state.items = doc && Array.isArray(doc.items) ? doc.items.map(makeItem) : [];
   if (doc && Array.isArray(doc.optout)) localStorage.setItem(COVER_OPTOUT_KEY, JSON.stringify(doc.optout));
 }
@@ -1160,9 +1184,68 @@ function setRate(id, delta){
   mutate(id, it => { it.rating = Math.max(0, Math.min(9, it.rating + delta)); });
 }
 function removeItem(id, name){
+  const removed = getItem(id);
+  if (!removed) return;
   state.items = state.items.filter(x => x.id !== id);
   save(); refresh();
+  scheduleDeleteUndo(removed);
   toast(name ? "已删除：" + name : "已删除");
+}
+
+function clearDeleteUndo(){
+  if (pendingDeleteTimer) clearTimeout(pendingDeleteTimer);
+  if (pendingDeleteTicker) clearInterval(pendingDeleteTicker);
+  pendingDeleteTimer = null; pendingDeleteTicker = null; pendingDeleteUndo = null;
+  try { localStorage.removeItem(DELETE_UNDO_KEY); } catch (e) {}
+  const el = $$("deleteUndoToast");
+  if (el) el.remove();
+}
+function saveDeleteUndo(){
+  try { localStorage.setItem(DELETE_UNDO_KEY, JSON.stringify(pendingDeleteUndo)); } catch (e) { console.warn("delete undo save failed", e); }
+}
+function scheduleDeleteUndo(item){
+  clearDeleteUndo();
+  pendingDeleteUndo = { item: makeItem(item), expiresAt: now() + 60 * 1000 };
+  saveDeleteUndo();
+  renderDeleteUndo();
+  const remaining = Math.max(0, pendingDeleteUndo.expiresAt - now());
+  pendingDeleteTimer = setTimeout(clearDeleteUndo, remaining + 50);
+  pendingDeleteTicker = setInterval(renderDeleteUndo, 250);
+}
+function restoreDeleteUndo(){
+  try {
+    const saved = JSON.parse(localStorage.getItem(DELETE_UNDO_KEY) || "null");
+    if (saved && saved.item && saved.item.id && Number(saved.expiresAt) > now()) {
+      pendingDeleteUndo = saved;
+      renderDeleteUndo();
+      const remaining = Math.max(0, pendingDeleteUndo.expiresAt - now());
+      pendingDeleteTimer = setTimeout(clearDeleteUndo, remaining + 50);
+      pendingDeleteTicker = setInterval(renderDeleteUndo, 250);
+    } else localStorage.removeItem(DELETE_UNDO_KEY);
+  } catch (e) { console.warn("delete undo load failed", e); }
+}
+function renderDeleteUndo(){
+  if (!pendingDeleteUndo) return;
+  const left = Math.max(0, Math.ceil((pendingDeleteUndo.expiresAt - now()) / 1000));
+  if (!left) { clearDeleteUndo(); return; }
+  let el = $$("deleteUndoToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "deleteUndoToast"; el.className = "toast undo";
+    el.innerHTML = '<span></span><button type="button" data-act="undodelete"></button>';
+    $$("toasts").appendChild(el);
+  }
+  el.querySelector("span").textContent = "已删除“" + pendingDeleteUndo.item.title + "”";
+  el.querySelector("button").textContent = "撤销删除（" + left + "秒）";
+}
+function undoLastDelete(){
+  if (!pendingDeleteUndo || pendingDeleteUndo.expiresAt <= now()) { clearDeleteUndo(); return; }
+  const item = pendingDeleteUndo.item;
+  if (getItem(item.id)) { clearDeleteUndo(); toast("该条目已存在，未重复恢复", true); return; }
+  state.items.unshift(makeItem(item));
+  clearDeleteUndo();
+  save(); refresh();
+  toast("已撤销删除：" + item.title);
 }
 
 /* 删除前统一弹确认框 */
@@ -1171,7 +1254,7 @@ function openDeleteConfirm(id){
   const it = getItem(id);
   if (!it) return;
   confirmId = id;
-  $$("confirmMsg").textContent = "《" + it.title + "》（" + it.type + "）将被永久删除，评分和备注也会一起删除。此操作不可撤销。";
+  $$("confirmMsg").textContent = "《" + it.title + "》（" + it.type + "）将被删除，评分和备注也会一起删除。删除后可在 1 分钟内撤销。";
   $$("confirmWrap").classList.remove("hidden");
   setTimeout(() => { const b = $$("delNo"); if (b) b.focus(); }, 30);
 }
@@ -1604,6 +1687,7 @@ function bindEvents(){
       case "conflictbackup": downloadConflictBackup(); break;
       case "conflictlater": closeConflictModal(); break;
       case "conflictremote": useLatestCloudData(); break;
+      case "undodelete": undoLastDelete(); break;
     }
   });
   $$("importFile").addEventListener("change", () => {
@@ -1635,7 +1719,7 @@ window.__app = {
   filtered, sorted,
   items: () => state.items.slice(),
   find: getItem,
-  openAdd, openEdit, saveModal, removeItem, openDeleteConfirm, closeDeleteConfirm, doConfirmedDelete,
+  openAdd, openEdit, saveModal, removeItem, undoLastDelete, openDeleteConfirm, closeDeleteConfirm, doConfirmedDelete,
   setType: v => { state.filter.type = v; refresh(); },
   setStatus: v => { state.filter.status = v; refresh(); },
   setQ: v => { state.filter.q = v; refresh(); },
@@ -1658,6 +1742,7 @@ function init(){
   renderTypebar();
   syncControls();
   renderList();
+  restoreDeleteUndo();
   bindEvents();
   bindDnD();
   // 自动把已存的大封面压成缩略图
@@ -1676,6 +1761,7 @@ function showApp(){
   $$("syncPlace").textContent = CLOUD_ENABLED ? "云端同步" : "本机浏览器";
   $$("storagePlace").textContent = CLOUD_ENABLED ? "云端（换设备登录也能继续使用）" : "本机浏览器";
   setSyncState(conflictSnapshot ? "发现未处理的跨设备冲突" : (CLOUD_ENABLED ? "已从云端读取" : "仅保存在本机"), conflictSnapshot ? "conflict" : (CLOUD_ENABLED ? "saved" : ""));
+  renderLastSyncTime();
   $$("signOutBtn").classList.toggle("hidden", !CLOUD_ENABLED || PUBLIC_MODE);
 }
 async function enterCloudApp(){
