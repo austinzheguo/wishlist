@@ -58,8 +58,9 @@
   .sync-state{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink3);white-space:nowrap}
   .sync-state::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
   .sync-state.pending{color:#d9b967}.sync-state.saving{color:var(--accent-2)}
-  .sync-state.saved{color:var(--accent)}.sync-state.error{color:#ff9b9b}
+  .sync-state.saved{color:var(--accent)}.sync-state.error{color:#ff9b9b}.sync-state.conflict{color:#ffbd6b}
   .sync-retry{color:#ffb4b4}.sync-retry:hover{color:#fff;background:rgba(255,107,107,.16)}
+  .sync-conflict{color:#ffcf82}.sync-conflict:hover{color:#fff;background:rgba(255,183,77,.16)}
   .btn-add{display:inline-flex;align-items:center;gap:7px;background:var(--accent);color:var(--accent-ink);font-weight:700;
     padding:9px 17px;border-radius:11px;font-size:14px;box-shadow:0 0 0 1px rgba(255,255,255,.2) inset,0 8px 20px -8px rgba(62,208,172,.6);
     transition:background .15s,transform .06s}
@@ -327,6 +328,7 @@
         <span class="sub" id="syncPlace"></span>
         <span class="sync-state hidden" id="syncState" role="status" aria-live="polite"></span>
         <button class="text-btn sync-retry hidden" id="syncRetryBtn" type="button">重试同步</button>
+        <button class="text-btn sync-conflict hidden" id="syncConflictBtn" type="button">处理冲突</button>
         <button class="text-btn" data-act="export">导出备份</button>
         <button class="text-btn" data-act="import">导入备份</button>
         <input type="file" id="importFile" accept="application/json" class="hidden">
@@ -490,6 +492,18 @@
     </div>
   </div>
 </div>
+<div class="mask2 hidden" id="conflictWrap" role="dialog" aria-modal="true" aria-labelledby="conflictTitle">
+  <div class="confirm">
+    <h3 id="conflictTitle">检测到跨设备修改</h3>
+    <p>云端清单已被另一台设备或页面更新。你当前的修改已安全保存在这台设备，尚未覆盖云端。</p>
+    <p>建议先下载本地修改备份，再读取最新版云端清单。</p>
+    <div class="row">
+      <button class="btn ghost" data-act="conflictbackup">下载本地备份</button>
+      <button class="btn ghost" data-act="conflictlater">稍后处理</button>
+      <button class="btn danger" data-act="conflictremote">读取最新版云端</button>
+    </div>
+  </div>
+</div>
 <div id="toasts"></div>
 </div>
 
@@ -498,6 +512,7 @@
 "use strict";
 /* ============================== 常量 ============================== */
 const LS_KEY = "wishlist.v1";
+const CONFLICT_KEY = LS_KEY + ".pending-conflict.v1";
 /*
   上线配置见 README-上线步骤.md；公开模式见 README-公开模式步骤.md。
   publishableKey 是可以放在网页里的公开钥匙；绝不可填 service_role / secret key。
@@ -521,6 +536,9 @@ let remoteSaveTimer = null;
 let remoteSaveInFlight = false;
 let queuedRemoteSnapshot = null;
 let failedRemoteSnapshot = null;
+let cloudRevision = null;
+let cloudUpdatedAt = null;
+let conflictSnapshot = null;
 const STATUS = {
   want:    { label: "想看",   cls: "" },
   doing:   { label: "进行中", cls: "st-进行中" },
@@ -778,19 +796,30 @@ function save(){
 function setSyncState(message, kind){
   const stateEl = $$("syncState");
   const retryBtn = $$("syncRetryBtn");
-  if (!stateEl || !retryBtn) return;
+  const conflictBtn = $$("syncConflictBtn");
+  if (!stateEl || !retryBtn || !conflictBtn) return;
   stateEl.textContent = message;
   stateEl.className = "sync-state " + (kind || "");
   stateEl.classList.toggle("hidden", !message);
   retryBtn.classList.toggle("hidden", kind !== "error");
+  conflictBtn.classList.toggle("hidden", kind !== "conflict");
 }
 function syncClock(){
   return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date());
 }
+function buildRemoteSnapshot(items){
+  return { app: "wishlist", ver: 1, updatedAt: now(), items: cleanItems(items), optout: getCoverOptOut().slice() };
+}
 function scheduleRemoteSave(items){
+  if (conflictSnapshot) {
+    // 冲突未处理前绝不继续自动写云端，避免本机旧数据覆盖另一台设备的新数据。
+    rememberConflict(buildRemoteSnapshot(items));
+    setSyncState("发现跨设备冲突", "conflict");
+    return;
+  }
   clearTimeout(remoteSaveTimer);
   // 只保留最新快照；由 flushRemoteSave 串行发送，避免慢请求反向覆盖新修改。
-  queuedRemoteSnapshot = { app: "wishlist", ver: 1, updatedAt: now(), items: cleanItems(items), optout: getCoverOptOut().slice() };
+  queuedRemoteSnapshot = buildRemoteSnapshot(items);
   failedRemoteSnapshot = null;
   setSyncState("等待同步", "pending");
   remoteSaveTimer = setTimeout(flushRemoteSave, 400);
@@ -803,11 +832,29 @@ async function flushRemoteSave(){
   remoteSaveInFlight = true;
   setSyncState("正在同步", "saving");
   try {
-    const { error } = await supabaseClient.from("wishlist_data").upsert(
-      { user_id: cloudUser.id, data: snapshot, updated_at: new Date().toISOString() },
-      { onConflict: "user_id" }
-    );
+    // 请求开始前取当前已知版本；同一页面的队列依旧按顺序串行，因此不会误伤本页的连续编辑。
+    const expectedRevision = cloudRevision;
+    let data, error;
+    if (expectedRevision == null) {
+      ({ data, error } = await supabaseClient.from("wishlist_data").insert(
+        { user_id: cloudUser.id, data: snapshot, revision: 0, updated_at: new Date().toISOString() }
+      ).select("revision,updated_at").maybeSingle());
+    } else {
+      ({ data, error } = await supabaseClient.from("wishlist_data").update(
+        { data: snapshot, revision: expectedRevision + 1, updated_at: new Date().toISOString() }
+      ).eq("user_id", cloudUser.id).eq("revision", expectedRevision).select("revision,updated_at").maybeSingle());
+    }
     if (error) throw error;
+    if (!data) {
+      // 把随后在本页排队、但尚未发出的编辑也放进冲突备份，绝不再自动发送它。
+      queuedRemoteSnapshot = null;
+      rememberConflict(buildRemoteSnapshot(state.items));
+      setSyncState("发现跨设备冲突", "conflict");
+      toast("云端已被其他设备更新；本机修改没有覆盖云端", true);
+      return;
+    }
+    cloudRevision = data.revision;
+    cloudUpdatedAt = data.updated_at;
     setSyncState("已同步 " + syncClock(), "saved");
   } catch (error) {
     console.warn("cloud save failed", error);
@@ -820,7 +867,7 @@ async function flushRemoteSave(){
     }
   } finally {
     remoteSaveInFlight = false;
-    if (queuedRemoteSnapshot && !remoteSaveTimer) flushRemoteSave();
+    if (!conflictSnapshot && queuedRemoteSnapshot && !remoteSaveTimer) flushRemoteSave();
   }
 }
 function retryRemoteSave(){
@@ -830,10 +877,60 @@ function retryRemoteSave(){
   setSyncState("正在重试", "saving");
   flushRemoteSave();
 }
+function rememberConflict(snapshot){
+  conflictSnapshot = {
+    app: "wishlist-conflict",
+    ver: 1,
+    detectedAt: new Date().toISOString(),
+    expectedRevision: cloudRevision,
+    data: snapshot
+  };
+  try { localStorage.setItem(CONFLICT_KEY, JSON.stringify(conflictSnapshot)); } catch (e) { console.warn("conflict backup failed", e); }
+}
+function restorePendingConflict(){
+  try {
+    const saved = JSON.parse(localStorage.getItem(CONFLICT_KEY) || "null");
+    if (saved && saved.data && Array.isArray(saved.data.items)) conflictSnapshot = saved;
+  } catch (e) { console.warn("conflict backup load failed", e); }
+}
+function openConflictModal(){
+  if (!conflictSnapshot) return;
+  $$("conflictWrap").classList.remove("hidden");
+}
+function closeConflictModal(){ $$("conflictWrap").classList.add("hidden"); }
+function downloadConflictBackup(){
+  if (!conflictSnapshot) return;
+  const blob = new Blob([JSON.stringify(Object.assign({}, conflictSnapshot.data, { exportedAt: new Date().toISOString(), reason: "cross-device-conflict" }), null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "wishlist-conflict-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast("已下载本机修改备份");
+}
+async function useLatestCloudData(){
+  if (!conflictSnapshot) return;
+  if (!window.confirm("这会用最新版云端清单替换当前页面内容。本机修改仍保留在已下载或本机冲突备份中。继续吗？")) return;
+  try {
+    await loadCloudData();
+    conflictSnapshot = null;
+    localStorage.removeItem(CONFLICT_KEY);
+    saveLocalOnly();
+    refresh();
+    closeConflictModal();
+    setSyncState("已读取最新版云端", "saved");
+    toast("已读取最新版云端清单");
+  } catch (e) { toast("读取云端失败，请检查网络后重试", true); }
+}
+function saveLocalOnly(){
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ app: "wishlist", ver: 1, updatedAt: now(), items: cleanItems(state.items) })); } catch (e) {}
+}
 async function loadCloudData(){
-  const { data, error } = await supabaseClient.from("wishlist_data").select("data").eq("user_id", cloudUser.id).maybeSingle();
+  const { data, error } = await supabaseClient.from("wishlist_data").select("data,revision,updated_at").eq("user_id", cloudUser.id).maybeSingle();
   if (error) throw error;
   const doc = data && data.data;
+  cloudRevision = data ? data.revision : null;
+  cloudUpdatedAt = data ? data.updated_at : null;
   state.items = doc && Array.isArray(doc.items) ? doc.items.map(makeItem) : [];
   if (doc && Array.isArray(doc.optout)) localStorage.setItem(COVER_OPTOUT_KEY, JSON.stringify(doc.optout));
 }
@@ -1437,6 +1534,7 @@ function doImportFile(file){
 /* ============================== 事件绑定 ============================== */
 function bindEvents(){
   $$("syncRetryBtn").addEventListener("click", retryRemoteSave);
+  $$("syncConflictBtn").addEventListener("click", openConflictModal);
   window.addEventListener("online", () => {
     if (failedRemoteSnapshot) retryRemoteSave();
     else if (queuedRemoteSnapshot && !remoteSaveInFlight) flushRemoteSave();
@@ -1503,6 +1601,9 @@ function bindEvents(){
       case "coverurl": urlToCover($$("coverUrl").value); break;
       case "export": doExport(); break;
       case "import": $$("importFile").click(); break;
+      case "conflictbackup": downloadConflictBackup(); break;
+      case "conflictlater": closeConflictModal(); break;
+      case "conflictremote": useLatestCloudData(); break;
     }
   });
   $$("importFile").addEventListener("change", () => {
@@ -1513,8 +1614,9 @@ function bindEvents(){
   // 遮罩点击关闭
   $$("mask").addEventListener("mousedown", e => { if (e.target === $$("mask")) closeModal(); });
   $$("confirmWrap").addEventListener("mousedown", e => { if (e.target === $$("confirmWrap")) closeDeleteConfirm(); });
+  $$("conflictWrap").addEventListener("mousedown", e => { if (e.target === $$("conflictWrap")) closeConflictModal(); });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { if (!$$("confirmWrap").classList.contains("hidden")) closeDeleteConfirm(); else closeModal(); }
+    if (e.key === "Escape") { if (!$$("conflictWrap").classList.contains("hidden")) closeConflictModal(); else if (!$$("confirmWrap").classList.contains("hidden")) closeDeleteConfirm(); else closeModal(); }
   });
 
   // 类型下拉（含自定义）
@@ -1573,11 +1675,12 @@ function showApp(){
   $$("appShell").classList.remove("hidden");
   $$("syncPlace").textContent = CLOUD_ENABLED ? "云端同步" : "本机浏览器";
   $$("storagePlace").textContent = CLOUD_ENABLED ? "云端（换设备登录也能继续使用）" : "本机浏览器";
-  setSyncState(CLOUD_ENABLED ? "已从云端读取" : "仅保存在本机", CLOUD_ENABLED ? "saved" : "");
+  setSyncState(conflictSnapshot ? "发现未处理的跨设备冲突" : (CLOUD_ENABLED ? "已从云端读取" : "仅保存在本机"), conflictSnapshot ? "conflict" : (CLOUD_ENABLED ? "saved" : ""));
   $$("signOutBtn").classList.toggle("hidden", !CLOUD_ENABLED || PUBLIC_MODE);
 }
 async function enterCloudApp(){
   try {
+    restorePendingConflict();
     await loadCloudData();
     showApp();
     init();
