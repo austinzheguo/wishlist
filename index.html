@@ -928,20 +928,16 @@ async function flushRemoteSave(){
   remoteSaveInFlight = true;
   setSyncState("正在同步", "saving");
   try {
-    // 请求开始前取当前已知版本；同一页面的队列依旧按顺序串行，因此不会误伤本页的连续编辑。
+    // 由数据库函数在一个事务内校验 revision、替换逐条记录并更新兼容快照。
     const expectedRevision = cloudRevision;
-    let data, error;
-    if (expectedRevision == null) {
-      ({ data, error } = await supabaseClient.from("wishlist_data").insert(
-        { user_id: cloudUser.id, data: snapshot, revision: 0, updated_at: new Date().toISOString() }
-      ).select("revision,updated_at").maybeSingle());
-    } else {
-      ({ data, error } = await supabaseClient.from("wishlist_data").update(
-        { data: snapshot, revision: expectedRevision + 1, updated_at: new Date().toISOString() }
-      ).eq("user_id", cloudUser.id).eq("revision", expectedRevision).select("revision,updated_at").maybeSingle());
-    }
+    const { data, error } = await supabaseClient.rpc("replace_wishlist_items", {
+      p_user_id: cloudUser.id,
+      p_expected_revision: expectedRevision,
+      p_snapshot: snapshot
+    });
     if (error) throw error;
-    if (!data) {
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result || result.ok !== true) {
       // 把随后在本页排队、但尚未发出的编辑也放进冲突备份，绝不再自动发送它。
       queuedRemoteSnapshot = null;
       rememberConflict(buildRemoteSnapshot(state.items));
@@ -949,8 +945,8 @@ async function flushRemoteSave(){
       toast("云端已被其他设备更新；本机修改没有覆盖云端", true);
       return;
     }
-    cloudRevision = data.revision;
-    cloudUpdatedAt = data.updated_at;
+    cloudRevision = Number(result.revision);
+    cloudUpdatedAt = result.updated_at;
     renderLastSyncTime();
     setSyncState("已同步 " + syncClock(), "saved");
   } catch (error) {
@@ -1038,13 +1034,23 @@ function saveLocalOnly(){
   try { localStorage.setItem(LS_KEY, JSON.stringify({ app: "wishlist", ver: 1, updatedAt: now(), items: cleanItems(state.items) })); } catch (e) {}
 }
 async function loadCloudData(){
-  const { data, error } = await supabaseClient.from("wishlist_data").select("data,revision,updated_at").eq("user_id", cloudUser.id).maybeSingle();
-  if (error) throw error;
-  const doc = data && data.data;
-  cloudRevision = data ? data.revision : null;
-  cloudUpdatedAt = data ? data.updated_at : null;
+  const [{ data: meta, error: metaError }, { data: rows, error: rowsError }] = await Promise.all([
+    supabaseClient.from("wishlist_data").select("data,revision,updated_at").eq("user_id", cloudUser.id).maybeSingle(),
+    supabaseClient.from("wishlist_items").select("id,user_id,type,title,status,priority,rating,note,cover,author,lang,platforms,created,updated").eq("user_id", cloudUser.id).order("updated", { ascending: false })
+  ]);
+  if (metaError) throw metaError;
+  if (rowsError) throw rowsError;
+  const doc = meta && meta.data;
+  cloudRevision = meta ? meta.revision : null;
+  cloudUpdatedAt = meta ? meta.updated_at : null;
   renderLastSyncTime();
-  state.items = doc && Array.isArray(doc.items) ? doc.items.map(makeItem) : [];
+  const itemRows = Array.isArray(rows) ? rows : [];
+  state.items = itemRows.length ? itemRows.map(row => makeItem({
+    id: row.id, type: row.type, title: row.title, status: row.status,
+    priority: row.priority, rating: row.rating, note: row.note, cover: row.cover,
+    author: row.author, lang: row.lang, platforms: row.platforms,
+    created: row.created, updated: row.updated
+  })) : (doc && Array.isArray(doc.items) ? doc.items.map(makeItem) : []);
   if (doc && Array.isArray(doc.optout)) localStorage.setItem(COVER_OPTOUT_KEY, JSON.stringify(doc.optout));
 }
 

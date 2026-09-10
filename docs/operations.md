@@ -23,6 +23,8 @@
 
 `supabase/003_add_wishlist_revision.sql` 是 v1.1.0 的一次性迁移：为 `wishlist_data` 增加 `revision` 版本号，以支持跨设备冲突检测。它不改变当前公开访问策略，也不会改写清单内容。
 
+`supabase/004_normalize_wishlist_items.sql` 是 v1.4.0 的结构迁移：将清单拆成 `wishlist_items` 逐条记录，并保留 `wishlist_data` 作为兼容快照和回退备份。前端通过 `replace_wishlist_items` 做带版本校验的事务同步。当前公开模式的访客权限暂未收紧，后续如要改为“只能新增”，应另行设计只追加接口或待审核表。
+
 ## 安全与恢复密码
 
 公开模式意味着知道网址的人都能查看、添加、编辑和删除这份清单。Supabase 的 publishable key 可以公开，但绝不能把 `service_role`、secret key、数据库密码或账号密码写入仓库。
