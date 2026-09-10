@@ -1,2 +1,65 @@
-# wishlist
-自己做的想看清单管理
+# 想看清单 / 想玩档案
+
+一个面向个人使用的中文愿望清单，用来管理书、动漫、电影、电视剧、游戏和纪录片。
+
+在线使用地址：https://austinzheguo.github.io/wishlist/
+
+## 当前状态
+
+- 网站由 GitHub Pages 托管。
+- 数据保存在 Supabase。
+- 当前为“公开可编辑”模式：任何知道网站地址的人都可以查看、添加、编辑和删除这份清单。
+- 这是当前使用者主动选择的便利优先方案；如果以后清单内容需要保护，应恢复密码访问模式。
+
+## 技术架构
+
+浏览器
+  ↓
+GitHub Pages（index.html，静态网页）
+  ↓
+Supabase（wishlist_data 表，存储一份 JSON 清单）
+
+程序没有使用框架或构建工具；HTML、CSS 和 JavaScript 都在 index.html 中。
+
+## 数据与安全
+
+- 网页中的 Supabase publishable key 可以公开；它不是数据库管理员密码。
+- 绝不能把 Supabase 的 service_role / secret key、数据库密码或个人账号密码写入本仓库。
+- 当前公开模式下，RLS 仍启用，但匿名访客被允许读写指定的一份清单。
+- 同一页面的连续修改会按顺序同步，页面顶部会显示等待、同步成功或失败状态；同时在两台设备修改时，后保存的一方仍可能覆盖先保存的一方。
+
+## 本地开发与发布
+
+正式开发目录应当通过 GitHub 仓库 clone 获得。修改流程：
+
+1. git pull 获取最新版本。
+2. 修改 index.html。
+3. 本地打开并测试网页。
+4. 用 git diff 检查改动。
+5. 提交并 git push。
+6. 等待 GitHub Pages 部署成功，再用无痕窗口检查线上版。
+
+不要直接把旧资料目录中的文件上传到 GitHub；以 clone 得到的项目目录为准。
+
+## 备份
+
+每月一次、以及修改 Supabase 权限或结构前，都应在网页中导出 JSON 备份。
+
+建议文件名：
+
+wishlist-backup-YYYY-MM-DD.json
+
+并保存到至少两个位置，例如电脑本地和云盘。
+
+## 项目结构
+
+index.html       # 唯一正式网页源码
+README.md        # 项目概览
+docs/            # 操作与维护说明
+supabase/        # 数据库结构与权限变更脚本
+
+## 已知限制
+
+- GitHub Pages 和 Supabase 都是海外服务，国内未使用代理时可能无法访问或较慢。
+- Supabase 免费项目在长期低活动时可能暂停；可登录 Supabase 后台恢复。
+- 免费档没有自动数据库备份，因此网页导出的 JSON 备份很重要。

@@ -1,0 +1,7 @@
+# macOS Finder metadata
+.DS_Store
+
+# Prevent accidental commits of future local secrets.
+.env
+.env.*
+!.env.example
