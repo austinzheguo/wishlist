@@ -137,7 +137,8 @@
   .badge{display:inline-flex;align-items:center;gap:4px;padding:2.5px 9px;border-radius:6px;font-size:11px;font-weight:700;
     backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.28)}
   .b-status{color:#fff;background:rgba(10,11,15,.55);border:1px solid rgba(255,255,255,.2)}
-  .b-type{color:rgba(0,0,0,.0)}
+  /* 表格里的类型标签没有卡片外层的 ty-* 类；标签本身也要能独立显示。 */
+  .b-type{color:var(--ink2);background:rgba(10,11,15,.55);border:1px solid rgba(255,255,255,.2)}
   .card-body{padding:11px 13px 12px;display:flex;flex-direction:column;gap:7px;flex:1;min-height:0}
   .c-title{font-size:15px;font-weight:600;margin:0;line-height:1.34;overflow-wrap:anywhere}
   .c-title .author{display:block;font-size:11.5px;font-weight:500;color:var(--ink3);margin-top:2px}
@@ -183,12 +184,12 @@
   .empty .big{font-size:34px;margin-bottom:10px;opacity:.7}
 
   /* ---------- type colors ---------- */
-  .ty-书 .b-type{color:#fff;background:rgba(202,148,44,.82);border-color:rgba(255,255,255,.18)}
-  .ty-动漫 .b-type{color:#fff;background:rgba(139,108,255,.8);border-color:rgba(255,255,255,.18)}
-  .ty-电影 .b-type{color:#fff;background:rgba(240,90,124,.82);border-color:rgba(255,255,255,.18)}
-  .ty-电视剧 .b-type{color:#fff;background:rgba(71,144,238,.85);border-color:rgba(255,255,255,.18)}
-  .ty-游戏 .b-type{color:#0a1f14;background:rgba(106,220,150,.85);border-color:rgba(255,255,255,.18)}
-  .ty-纪录片 .b-type{color:#06202a;background:rgba(86,205,224,.85);border-color:rgba(255,255,255,.18)}
+  .ty-书 .b-type,.b-type.ty-书{color:#fff;background:rgba(202,148,44,.82);border-color:rgba(255,255,255,.18)}
+  .ty-动漫 .b-type,.b-type.ty-动漫{color:#fff;background:rgba(139,108,255,.8);border-color:rgba(255,255,255,.18)}
+  .ty-电影 .b-type,.b-type.ty-电影{color:#fff;background:rgba(240,90,124,.82);border-color:rgba(255,255,255,.18)}
+  .ty-电视剧 .b-type,.b-type.ty-电视剧{color:#fff;background:rgba(71,144,238,.85);border-color:rgba(255,255,255,.18)}
+  .ty-游戏 .b-type,.b-type.ty-游戏{color:#0a1f14;background:rgba(106,220,150,.85);border-color:rgba(255,255,255,.18)}
+  .ty-纪录片 .b-type,.b-type.ty-纪录片{color:#06202a;background:rgba(86,205,224,.85);border-color:rgba(255,255,255,.18)}
   .chip.type-ink{font-weight:600}
   .ty-书 .chip.type-ink{color:#e7b95c}
   .ty-动漫 .chip.type-ink{color:#b39bff}
@@ -1117,7 +1118,7 @@ function tableHTML(list){
           <span>${esc(it.title)}${it.author ? `<span class="meta">${esc(it.author)}${it.lang ? " · " + esc(it.lang) : ""}</span>` : ""}</span>
         </div>
       </td>
-      <td><span class="badge b-type" style="display:inline-block">${typeGlyph(it.type)} ${esc(it.type)}</span></td>
+      <td><span class="badge b-type ${typeInk(it.type)}" style="display:inline-block">${typeGlyph(it.type)} ${esc(it.type)}</span></td>
       <td><span class="chip">${esc(stLbl)}</span></td>
       <td class="t-num ${it.priority > 0 ? "" : "off"}">${it.priority > 0 ? it.priority : "—"}</td>
       <td class="t-num ${it.rating > 0 ? "" : "off"}">${it.rating > 0 ? "★ " + it.rating : "—"}</td>
