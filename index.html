@@ -105,6 +105,9 @@
   .count-hint{font-size:12px;color:var(--ink3);white-space:nowrap}
 
   .typebar{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
+  .quickbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+  .quickbar .quick-label{font-size:12px;color:var(--ink3);font-weight:600}
+  .quickbar .chip-t{padding:5px 11px;font-size:12px}
   .chip-t{display:inline-flex;align-items:center;gap:6px;background:var(--layer);border:1px solid var(--line);
     border-radius:999px;padding:5px 13px;font-size:13px;color:var(--ink2);transition:border-color .12s,color .12s,background .12s}
   .chip-t:hover{color:var(--ink);border-color:var(--line2)}
@@ -300,6 +303,46 @@
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:var(--layer3);border-radius:6px}
   ::-webkit-scrollbar-track{background:transparent}
+
+  /* ---------- mobile ---------- */
+  @media (max-width:680px){
+    .wrap{padding-left:14px;padding-right:14px}
+    header{padding-top:14px}
+    .top{align-items:flex-start;gap:10px}
+    .brand{width:100%;gap:10px}
+    .brand h1{font-size:18px}
+    .brand .sub{font-size:11px;line-height:1.35}
+    .top-right{margin-left:0;width:100%;gap:4px;flex-wrap:wrap}
+    .top-right .sync-state,.top-right .sync-last{margin-right:auto}
+    .top-right .text-btn{padding:7px 7px}
+    .top-right .btn-add{margin-left:auto;padding:8px 12px;font-size:13px}
+    .ribbon{margin-top:13px}
+    .stat{min-width:50%;padding:10px 12px}
+    .stat + .stat{border-left:none}
+    .stat:nth-child(even){border-left:1px solid var(--line)}
+    .stat:nth-child(n+3){border-top:1px solid var(--line)}
+    .toolbar{gap:8px;margin-top:14px}
+    .search{order:-1;min-width:100%;max-width:none}
+    .fld select,.btn-dir,.chk{padding-top:8px;padding-bottom:8px}
+    .tool-right{width:100%;margin-left:0;justify-content:space-between}
+    .quickbar{gap:6px}
+    .quickbar .quick-label{width:100%}
+    .typebar{gap:6px;margin-bottom:12px}
+    .chip-t{padding:5px 10px;font-size:12px}
+    .grid{grid-template-columns:1fr;gap:12px}
+    .modal{padding:18px 15px 18px}
+    .mask{padding:10px}
+    .row2,.row3{grid-template-columns:1fr;gap:0}
+    .tblwrap{overflow-x:auto}
+    .tbl{min-width:720px}
+    #toasts{bottom:14px;width:calc(100% - 24px)}
+    .toast{max-width:100%;text-align:center}
+  }
+  @media (max-width:390px){
+    .top-right .sync-state,.top-right .sync-last{width:100%;margin-right:0}
+    .top-right .btn-add{margin-left:0}
+    .seg button{padding-left:10px;padding-right:10px}
+  }
 </style>
 </head>
 <body>
@@ -339,7 +382,7 @@
         <button class="text-btn" data-act="import">导入备份</button>
         <input type="file" id="importFile" accept="application/json" class="hidden">
         <button class="text-btn hidden" id="signOutBtn" type="button">退出</button>
-        <button class="btn-add" data-act="new"><span class="plus">＋</span> 添加想看</button>
+        <button class="btn-add" data-act="new" id="newBtn"><span class="plus">＋</span> 添加想看</button>
       </div>
     </div>
     <div class="ribbon" id="stats"></div>
@@ -377,6 +420,7 @@
       </div>
     </div>
   </div>
+  <div class="quickbar" id="quickbar" aria-label="快捷筛选"></div>
   <div class="typebar" id="typebar"></div>
   <div id="list"></div>
   <div class="empty hidden" id="emptyBox"><div class="big">🗂</div>
@@ -389,7 +433,7 @@
 </footer>
 
 <div class="mask hidden" id="mask">
-  <div class="modal" id="modal" role="dialog">
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="m-head">
       <h2 id="modalTitle">添加想看</h2>
       <button class="x" data-act="mclose">✕</button>
@@ -489,8 +533,8 @@
 </div>
 
 <div class="mask2 hidden" id="confirmWrap">
-  <div class="confirm">
-    <h3>确认删除这条吗？</h3>
+  <div class="confirm" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <h3 id="confirmTitle">确认删除这条吗？</h3>
     <p id="confirmMsg"></p>
     <div class="row">
       <button class="btn ghost" data-act="delno" id="delNo">取消</button>
@@ -518,6 +562,7 @@
 "use strict";
 /* ============================== 常量 ============================== */
 const LS_KEY = "wishlist.v1";
+const UI_PREF_KEY = LS_KEY + ".ui-preferences.v1";
 const CONFLICT_KEY = LS_KEY + ".pending-conflict.v1";
 const DELETE_UNDO_KEY = LS_KEY + ".pending-delete.v1";
 /*
@@ -785,6 +830,34 @@ function load(){
   const seeded = buildSeeds();
   return seeded;
 }
+function saveUiPreferences(){
+  const f = state.filter;
+  try {
+    localStorage.setItem(UI_PREF_KEY, JSON.stringify({
+      q: f.q, status: f.status, type: f.type, hideDone: !!f.hideDone,
+      sortF: f.sortF, sortDir: f.sortDir, view: f.view, quick: f.quick || "all"
+    }));
+  } catch (e) { console.warn("ui preference save failed", e); }
+}
+function restoreUiPreferences(){
+  try {
+    const p = JSON.parse(localStorage.getItem(UI_PREF_KEY) || "null");
+    if (!p || typeof p !== "object") return;
+    const f = state.filter;
+    const statuses = ["all", "want", "doing", "done", "dropped"];
+    const sorts = ["p", "r", "name", "status", "type", "updated"];
+    const views = ["grid", "table"];
+    const quicks = ["all", "recent", "note", "unrated"];
+    if (typeof p.q === "string") f.q = p.q.slice(0, 180);
+    if (statuses.includes(p.status)) f.status = p.status;
+    if (typeof p.type === "string" && p.type.length <= 30) f.type = p.type;
+    if (typeof p.hideDone === "boolean") f.hideDone = p.hideDone;
+    if (sorts.includes(p.sortF)) f.sortF = p.sortF;
+    if (["asc", "desc"].includes(p.sortDir)) f.sortDir = p.sortDir;
+    if (views.includes(p.view)) f.view = p.view;
+    if (quicks.includes(p.quick)) f.quick = p.quick;
+  } catch (e) { console.warn("ui preference load failed", e); }
+}
 function cleanItems(items){
   return items.map(it => {
     const c = Object.assign({}, it);
@@ -917,11 +990,26 @@ function restorePendingConflict(){
     if (saved && saved.data && Array.isArray(saved.data.items)) conflictSnapshot = saved;
   } catch (e) { console.warn("conflict backup load failed", e); }
 }
-function openConflictModal(){
-  if (!conflictSnapshot) return;
-  $$("conflictWrap").classList.remove("hidden");
+let conflictReturnFocus = null;
+function restoreFocus(target){
+  setTimeout(() => {
+    const fallback = $$("newBtn");
+    const el = target && document.contains(target) ? target : fallback;
+    if (el && !el.classList.contains("hidden")) el.focus();
+  }, 20);
 }
-function closeConflictModal(){ $$("conflictWrap").classList.add("hidden"); }
+function openConflictModal(trigger){
+  if (!conflictSnapshot) return;
+  conflictReturnFocus = trigger || document.activeElement;
+  $$("conflictWrap").classList.remove("hidden");
+  setTimeout(() => { const b = document.querySelector('[data-act="conflictbackup"]'); if (b) b.focus(); }, 30);
+}
+function closeConflictModal(){
+  $$("conflictWrap").classList.add("hidden");
+  const target = conflictReturnFocus;
+  conflictReturnFocus = null;
+  restoreFocus(target);
+}
 function downloadConflictBackup(){
   if (!conflictSnapshot) return;
   const blob = new Blob([JSON.stringify(Object.assign({}, conflictSnapshot.data, { exportedAt: new Date().toISOString(), reason: "cross-device-conflict" }), null, 2)], { type: "application/json" });
@@ -961,7 +1049,7 @@ async function loadCloudData(){
 }
 
 /* ============================== 全局状态 ============================== */
-let state = { items: CLOUD_ENABLED ? [] : load(), filter: { q: "", status: "all", type: "all", hideDone: false, sortF: "p", sortDir: "desc", view: "grid" } };
+let state = { items: CLOUD_ENABLED ? [] : load(), filter: { q: "", status: "all", type: "all", hideDone: false, sortF: "p", sortDir: "desc", view: "grid", quick: "all" } };
 
 /* ============================== 筛选 / 排序 ============================== */
 function matchQ(it){
@@ -978,7 +1066,10 @@ function filtered(){
     matchQ(it) &&
     (f.status === "all" || it.status === f.status) &&
     (f.type === "all" || it.type === f.type) &&
-    (f.status !== "all" || !f.hideDone || it.status === "want" || it.status === "doing")
+    (f.status !== "all" || !f.hideDone || it.status === "want" || it.status === "doing") &&
+    (f.quick !== "recent" || it.created >= now() - 30 * 24 * 60 * 60 * 1000) &&
+    (f.quick !== "note" || String(it.note || "").trim() !== "") &&
+    (f.quick !== "unrated" || !it.rating)
   );
 }
 function sorted(arr){
@@ -1030,13 +1121,24 @@ function renderTypebar(){
   html += `<a class="clear-flt ${hasActiveFilter() ? "" : "hidden"}" data-act="clearflt">清除筛选</a>`;
   $$("typebar").innerHTML = html;
 }
+function renderQuickbar(){
+  const f = state.filter;
+  const items = [
+    ["recent", "最近 30 天新增"],
+    ["note", "只看有备注"],
+    ["unrated", "只看未评分"]
+  ];
+  $$('quickbar').innerHTML = `<span class="quick-label">快捷筛选</span>` + items.map(([value, label]) =>
+    `<button class="chip-t${f.quick === value ? " on" : ""}" data-act="quick" data-v="${value}" aria-pressed="${f.quick === value}">${label}</button>`
+  ).join("");
+}
 function chipT(v, label, n){
   const on = state.filter.type === v ? " on" : "";
   return `<button class="chip-t${on}" data-act="settype" data-v="${esc(v)}">${esc(label)}<span class="n">${n}</span></button>`;
 }
 function hasActiveFilter(){
   const f = state.filter;
-  return f.q !== "" || f.status !== "all" || f.type !== "all" || f.hideDone;
+  return f.q !== "" || f.status !== "all" || f.type !== "all" || f.hideDone || f.quick !== "all";
 }
 
 function renderList(){
@@ -1051,10 +1153,29 @@ function renderList(){
 
 /* ---------- 卡片 ---------- */
 function coverHTML(it, monogram){
-  if (it.cover) return `<img src="${esc(it.cover)}" alt="${esc(it.title)}" loading="lazy">`;
+  if (it.cover) return `<img class="cover-img" src="${esc(it.cover)}" alt="${esc(it.title)}" loading="lazy" data-cover-type="${esc(it.type)}">`;
   const cov = typeCov(it.type);
   const glyph = typeGlyph(it.type);
   return `<div class="glyph ${cov}"><span>${esc(monogram)}</span><div class="dzm"></div></div>`;
+}
+function replaceBrokenCover(img){
+  if (!img || !img.parentElement) return;
+  if (img.classList.contains("cover-img")) {
+    const fallback = document.createElement("div");
+    fallback.className = "glyph " + typeCov(img.dataset.coverType || "书");
+    const icon = document.createElement("span");
+    icon.textContent = "🖼";
+    fallback.appendChild(icon);
+    const shine = document.createElement("div");
+    shine.className = "dzm";
+    fallback.appendChild(shine);
+    img.replaceWith(fallback);
+  } else if (img.classList.contains("table-cover-img")) {
+    const fallback = document.createElement("span");
+    fallback.className = "gly";
+    fallback.textContent = "🖼";
+    img.replaceWith(fallback);
+  }
 }
 function coverMetaLine(it){
   const parts = [];
@@ -1114,7 +1235,7 @@ function tableHTML(list){
     <tr data-item="${it.id}">
       <td>
         <div class="t-title">
-          <span class="t-cover cov-${esc(it.type)}">${it.cover ? `<img src="${esc(it.cover)}" alt="">` : `<span class="gly">${esc(firstChar(it.title))}</span>`}</span>
+          <span class="t-cover cov-${esc(it.type)}">${it.cover ? `<img class="table-cover-img" src="${esc(it.cover)}" alt="" loading="lazy">` : `<span class="gly">${esc(firstChar(it.title))}</span>`}</span>
           <span>${esc(it.title)}${it.author ? `<span class="meta">${esc(it.author)}${it.lang ? " · " + esc(it.lang) : ""}</span>` : ""}</span>
         </div>
       </td>
@@ -1157,9 +1278,11 @@ function syncControls(){
 }
 function refresh(){
   renderStats();
+  renderQuickbar();
   renderTypebar();
   syncControls();
   renderList();
+  saveUiPreferences();
 }
 function setSortField(field){
   const f = state.filter;
@@ -1251,22 +1374,27 @@ function undoLastDelete(){
 
 /* 删除前统一弹确认框 */
 let confirmId = null;
-function openDeleteConfirm(id){
+let confirmReturnFocus = null;
+function openDeleteConfirm(id, trigger){
   const it = getItem(id);
   if (!it) return;
   confirmId = id;
+  confirmReturnFocus = trigger || document.activeElement;
   $$("confirmMsg").textContent = "《" + it.title + "》（" + it.type + "）将被删除，评分和备注也会一起删除。删除后可在 1 分钟内撤销。";
   $$("confirmWrap").classList.remove("hidden");
   setTimeout(() => { const b = $$("delNo"); if (b) b.focus(); }, 30);
 }
-function closeDeleteConfirm(){
+function closeDeleteConfirm(restore = true){
   $$("confirmWrap").classList.add("hidden");
   confirmId = null;
+  const target = confirmReturnFocus;
+  confirmReturnFocus = null;
+  if (restore) restoreFocus(target);
 }
 function doConfirmedDelete(){
   const id = confirmId;
   const it = id ? getItem(id) : null;
-  closeDeleteConfirm();
+  closeDeleteConfirm(false);
   if (editId && editId === id) closeModal();
   if (id) removeItem(id, it ? it.title : "");
 }
@@ -1274,15 +1402,21 @@ function doConfirmedDelete(){
 /* ============================== 弹窗编辑 ============================== */
 let draft = null;   // 正在编辑的 item 副本（保存前）
 let editId = null;  // null = 新增
+let modalReturnFocus = null;
 
-function openModal(){
+function openModal(trigger){
+  modalReturnFocus = trigger || document.activeElement;
   $$("mask").classList.remove("hidden");
   document.body.style.overflow = "hidden";
 }
 function closeModal(){
+  const wasOpen = !$$('mask').classList.contains("hidden");
   $$("mask").classList.add("hidden");
   document.body.style.overflow = "";
   editId = null; draft = null;
+  const target = modalReturnFocus;
+  modalReturnFocus = null;
+  if (wasOpen) restoreFocus(target);
 }
 function isCustomTypeName(t){ return TYPE_ORDER.indexOf(t) === -1; }
 function writeDraftToInputs(){
@@ -1307,7 +1441,7 @@ function updateTypeUI(){
   renderPick("ratePick", draft.rating, true);
   refreshCoverPreview();
 }
-function openAdd(){
+function openAdd(trigger){
   const pref = state.filter.type !== "all" ? state.filter.type : "书";
   editId = null;
   draft = { type: pref, title: "", status: "want", priority: 0, rating: 0, note: "", cover: "", author: "", lang: "", platforms: [], customType: "" };
@@ -1315,10 +1449,10 @@ function openAdd(){
   $$("mDelete").classList.add("hidden");
   writeDraftToInputs();
   updateTypeUI();
-  openModal();
+  openModal(trigger);
   setTimeout(() => { const el = $$("fTitle"); if (el) { el.focus(); el.select(); } }, 40);
 }
-function openEdit(id){
+function openEdit(id, trigger){
   const it = getItem(id);
   if (!it) return;
   editId = id;
@@ -1327,7 +1461,8 @@ function openEdit(id){
   $$("mDelete").classList.remove("hidden");
   writeDraftToInputs();
   updateTypeUI();
-  openModal();
+  openModal(trigger);
+  setTimeout(() => { const el = $$("fTitle"); if (el) { el.focus(); el.select(); } }, 40);
 }
 function renderPick(containerId, val, isRate){
   const box = $$(containerId);
@@ -1618,7 +1753,11 @@ function doImportFile(file){
 /* ============================== 事件绑定 ============================== */
 function bindEvents(){
   $$("syncRetryBtn").addEventListener("click", retryRemoteSave);
-  $$("syncConflictBtn").addEventListener("click", openConflictModal);
+  $$("syncConflictBtn").addEventListener("click", e => openConflictModal(e.currentTarget));
+  document.addEventListener("error", e => {
+    const img = e.target;
+    if (img instanceof HTMLImageElement && (img.classList.contains("cover-img") || img.classList.contains("table-cover-img"))) replaceBrokenCover(img);
+  }, true);
   window.addEventListener("online", () => {
     if (failedRemoteSnapshot) retryRemoteSave();
     else if (queuedRemoteSnapshot && !remoteSaveInFlight) flushRemoteSave();
@@ -1632,7 +1771,7 @@ function bindEvents(){
   $$("q").addEventListener("input", e => {
     state.filter.q = e.target.value;
     clearTimeout(tmr);
-    tmr = setTimeout(() => { renderTypebar(); syncControls(); renderList(); }, 60);
+    tmr = setTimeout(() => { refresh(); }, 60);
   });
   // 状态 / 排序
   $$("statusSel").addEventListener("change", e => { state.filter.status = e.target.value; refresh(); });
@@ -1663,13 +1802,14 @@ function bindEvents(){
     const act = btn.dataset.act;
     const i = btn.dataset.i;
     switch (act) {
-      case "new": openAdd(); break;
+      case "new": openAdd(btn); break;
       case "view": state.filter.view = btn.dataset.v; refresh(); break;
       case "sortdir": state.filter.sortDir = state.filter.sortDir === "asc" ? "desc" : "asc"; refresh(); break;
       case "settype": state.filter.type = btn.dataset.v; refresh(); break;
-      case "clearflt": state.filter.q = ""; state.filter.status = "all"; state.filter.type = "all"; state.filter.hideDone = false; refresh(); break;
-      case "edit": if (i) openEdit(i); break;
-      case "del": if (i) openDeleteConfirm(i); break;
+      case "quick": state.filter.quick = state.filter.quick === btn.dataset.v ? "all" : btn.dataset.v; refresh(); break;
+      case "clearflt": state.filter.q = ""; state.filter.status = "all"; state.filter.type = "all"; state.filter.hideDone = false; state.filter.quick = "all"; refresh(); break;
+      case "edit": if (i) openEdit(i, btn); break;
+      case "del": if (i) openDeleteConfirm(i, btn); break;
       case "delno": closeDeleteConfirm(); break;
       case "delyes": doConfirmedDelete(); break;
       case "priU": if (i) setPri(i, 1); break;
@@ -1677,7 +1817,7 @@ function bindEvents(){
       case "rateU": if (i) setRate(i, 1); break;
       case "rateD": if (i) setRate(i, -1); break;
       case "mclose": closeModal(); break;
-      case "mdel": if (editId) openDeleteConfirm(editId); break;
+      case "mdel": if (editId) openDeleteConfirm(editId, btn); break;
       case "msave": saveModal(); break;
       case "coverdel": setCoverValue(""); break;
       case "coverpick": $$("coverFile").click(); break;
@@ -1733,16 +1873,14 @@ window.__app = {
 
 /* ============================== 启动 ============================== */
 function init(){
+  restoreUiPreferences();
   if (!CLOUD_ENABLED && !state.items.length) {
     const seeded = buildSeeds();
     if (seeded.length) { state.items = seeded; save(); }
   }
   const libAdded = applyCoverLibrary();
   if (libAdded) console.log("cover library: 已自动补齐 " + libAdded + " 个封面");
-  renderStats();
-  renderTypebar();
-  syncControls();
-  renderList();
+  refresh();
   restoreDeleteUndo();
   bindEvents();
   bindDnD();
