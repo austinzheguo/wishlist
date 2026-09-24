@@ -361,6 +361,15 @@
   </div>
 </div>
 
+<div id="cloudErrorGate" class="auth-gate hidden">
+  <div class="auth-card">
+    <div class="auth-mark">☁️</div>
+    <h1>云端暂时不可用</h1>
+    <p id="cloudErrorMessage">云端数据库暂时无法连接。请稍后重试，或检查 Supabase 项目状态。</p>
+    <button class="btn primary" id="cloudRetryBtn" type="button">重试</button>
+  </div>
+</div>
+
 <div id="appShell" class="hidden">
 <header>
   <div class="wrap">
@@ -1900,8 +1909,25 @@ function showLoginError(message){
   el.textContent = message;
   el.classList.remove("hidden");
 }
+function showCloudError(message){
+  $$("authGate").classList.add("hidden");
+  $$("appShell").classList.add("hidden");
+  $$("cloudErrorMessage").textContent = message || "云端数据库暂时无法连接。请稍后重试，或检查 Supabase 项目状态。";
+  $$("cloudErrorGate").classList.remove("hidden");
+  const btn = $$("cloudRetryBtn");
+  btn.disabled = false;
+  btn.textContent = "重试";
+}
+async function retryCloudApp(){
+  const btn = $$("cloudRetryBtn");
+  btn.disabled = true;
+  btn.textContent = "正在重试…";
+  $$("cloudErrorGate").classList.add("hidden");
+  await enterCloudApp();
+}
 function showApp(){
   $$("authGate").classList.add("hidden");
+  $$("cloudErrorGate").classList.add("hidden");
   $$("appShell").classList.remove("hidden");
   $$("syncPlace").textContent = CLOUD_ENABLED ? "云端同步" : "本机浏览器";
   $$("storagePlace").textContent = CLOUD_ENABLED ? "云端（换设备登录也能继续使用）" : "本机浏览器";
@@ -1917,18 +1943,23 @@ async function enterCloudApp(){
     init();
   } catch (e) {
     console.error("cloud load failed", e);
-    showLoginError("无法读取云端数据，请检查网络或 Supabase 设置。");
+    if (PUBLIC_MODE) showCloudError("云端数据库暂时无法连接。请稍后重试，或检查 Supabase 项目状态。");
+    else showLoginError("无法读取云端数据，请检查网络或 Supabase 设置。");
   }
 }
 async function boot(){
+  $$("cloudRetryBtn").addEventListener("click", retryCloudApp);
   if (!CLOUD_ENABLED) {
     showApp();
     init();
     return;
   }
   if (!window.supabase) {
-    $$("authGate").classList.remove("hidden");
-    showLoginError("登录组件未能加载，请检查网络后刷新。");
+    if (PUBLIC_MODE) showCloudError("云端组件未能加载。请稍后重试，或检查网络连接。");
+    else {
+      $$("authGate").classList.remove("hidden");
+      showLoginError("登录组件未能加载，请检查网络后刷新。");
+    }
     return;
   }
   supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.publishableKey);
