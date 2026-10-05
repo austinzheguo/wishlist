@@ -12,7 +12,7 @@ class Element {
   replaceChildren(){ this.children=[]; }
 }
 function vmFixture(fetch){
-  const elements=new Map(["authGate","appShell","cloudErrorMessage","cloudErrorGate","cloudRetryBtn","conflictWrap","toasts","syncState","syncRetryBtn","syncConflictBtn","syncPlace","storagePlace","signOutBtn","syncLastSuccess"].map(id=>[id,new Element()]));
+  const elements=new Map(["authGate","appShell","cloudErrorTitle","cloudErrorMessage","cloudErrorGate","cloudRetryBtn","conflictWrap","toasts","syncState","syncRetryBtn","syncConflictBtn","syncPlace","storagePlace","signOutBtn","syncLastSuccess"].map(id=>[id,new Element()]));
   const sessionStorage={getItem:()=>null,setItem(){},removeItem(){}};
   const context={document:{getElementById:id=>elements.get(id),addEventListener(){},title:"Wishlist",visibilityState:"visible"},window:{addEventListener(){}},sessionStorage,console:{warn(){},error(){}},fetch,AbortController,AbortSignal,Date,URL,Blob,crypto:{randomUUID:()=>"fixture-request-id"},setTimeout,clearTimeout,setInterval,clearInterval,location:{reload(){},assign(){}},Intl,JSON,Math,Number,String,Array,Object,Promise,RegExp,Set,Map};
   runInNewContext(script,context);
@@ -52,6 +52,38 @@ test("simulated API outage renders the failure card and enables retry", async ()
   assert.equal(elements.get("cloudErrorGate").classList.contains("hidden"),false);
   assert.equal(elements.get("cloudRetryBtn").textContent,"重试");
   assert.equal(elements.get("cloudRetryBtn").disabled,false);
+});
+
+test("slow successful load stays in loading state and then opens the app", async () => {
+  let resolveSession, resolveData;
+  const {context,elements}=vmFixture(()=>new Promise(resolve=>{resolveSession=resolve;}));
+  context.finishData=resolve=>{resolveData=resolve;};
+  runInNewContext("init = () => {}; loadCloudData = () => new Promise(resolve => finishData(resolve));",context);
+  const opening=context.enterCloudApp();
+  assert.equal(elements.get("cloudErrorGate").classList.contains("hidden"),false);
+  assert.equal(elements.get("cloudErrorTitle").textContent,"正在加载清单");
+  assert.equal(elements.get("cloudRetryBtn").classList.contains("hidden"),true);
+  resolveSession({ok:true,status:200,json:async()=>({expiresAt:Date.now()+60000,readOnly:true})});
+  for(let i=0;i<5&&!resolveData;i++) await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(elements.get("cloudErrorTitle").textContent,"正在加载清单");
+  resolveData(); await opening;
+  assert.equal(elements.get("cloudErrorGate").classList.contains("hidden"),true);
+  assert.equal(elements.get("appShell").classList.contains("hidden"),false);
+  assert.match(elements.get("syncState").textContent,/只读预览/);
+  context.suspendPrivateSession();
+});
+
+test("a real API failure changes loading into the retryable outage state", async () => {
+  const {context,elements}=vmFixture(async()=>({ok:true,status:200,json:async()=>({expiresAt:Date.now()+60000})}));
+  runInNewContext('loadCloudData = async () => { throw new Error("synthetic database unavailable"); };',context);
+  const opening=context.enterCloudApp();
+  assert.equal(elements.get("cloudErrorTitle").textContent,"正在加载清单");
+  await opening;
+  assert.equal(elements.get("cloudErrorGate").classList.contains("hidden"),false);
+  assert.equal(elements.get("cloudErrorTitle").textContent,"私有数据库暂时不可用");
+  assert.match(elements.get("cloudErrorMessage").textContent,/云端数据库暂时无法连接/);
+  assert.equal(elements.get("cloudRetryBtn").classList.contains("hidden"),false);
+  assert.equal(elements.get("cloudRetryBtn").textContent,"重试");
 });
 
 test("suspended delayed data response cannot repopulate private state", async () => {

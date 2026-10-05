@@ -364,7 +364,7 @@
 <div id="cloudErrorGate" class="auth-gate hidden">
   <div class="auth-card">
     <div class="auth-mark">☁️</div>
-    <h1>私有数据库暂时不可用</h1>
+    <h1 id="cloudErrorTitle">私有数据库暂时不可用</h1>
     <p id="cloudErrorMessage" role="status" aria-live="polite">云端数据库暂时无法连接。请稍后重试，或检查服务器状态。</p>
     <button class="btn primary" id="cloudRetryBtn" type="button">重试</button>
   </div>
@@ -1683,19 +1683,27 @@ function clearPrivateSession(){
   $$('toasts').replaceChildren(); document.title = "想看清单";
 }
 function expirePrivateSession(){
-  clearPrivateSession(); showCloudError("登录状态已失效。请重新验证后继续使用。");
+  clearPrivateSession(); showCloudError("登录状态已失效。请重新验证后继续使用。", "登录已过期");
   const btn = $$('cloudRetryBtn'); btn.textContent = "重新验证"; btn.dataset.reauthenticate = "true";
 }
-function showCloudError(message){
+function showCloudLoading(){
   $$('authGate').classList.add('hidden'); $$('appShell').classList.add('hidden');
+  $$('cloudErrorTitle').textContent = "正在加载清单";
+  $$('cloudErrorMessage').textContent = "正在验证访问状态并读取私有数据库…";
+  $$('cloudErrorGate').classList.remove('hidden');
+  const btn = $$('cloudRetryBtn'); btn.disabled = true; btn.textContent = "正在连接…"; btn.classList.add('hidden');
+}
+function showCloudError(message, title){
+  $$('authGate').classList.add('hidden'); $$('appShell').classList.add('hidden');
+  $$('cloudErrorTitle').textContent = title || "私有数据库暂时不可用";
   $$('cloudErrorMessage').textContent = message || "私有数据库暂时无法连接，请稍后重试。";
   $$('cloudErrorGate').classList.remove('hidden');
-  const btn = $$('cloudRetryBtn'); btn.disabled = false; btn.textContent = "重试";
+  const btn = $$('cloudRetryBtn'); btn.classList.remove('hidden'); btn.disabled = false; btn.textContent = "重试";
 }
 async function retryCloudApp(){
   const btn = $$('cloudRetryBtn');
   if (btn.dataset.reauthenticate === "true") { location.reload(); return; }
-  btn.disabled = true; btn.textContent = "正在重试…"; $$('cloudErrorGate').classList.add('hidden'); await enterCloudApp();
+  await enterCloudApp();
 }
 function showApp(){
   $$('authGate').classList.add('hidden'); $$('cloudErrorGate').classList.add('hidden'); $$('appShell').classList.remove('hidden');
@@ -1706,6 +1714,7 @@ function showApp(){
   renderLastSyncTime(); $$('signOutBtn').classList.remove('hidden');
 }
 async function enterCloudApp(){
+  showCloudLoading();
   requestAbortController?.abort();
   saveAbortController?.abort();
   const epoch = ++sessionEpoch;
@@ -1738,7 +1747,7 @@ async function boot(){
   $$('signOutBtn').addEventListener('click', () => {
     clearPrivateSession(); location.assign("/cdn-cgi/access/logout?returnTo=" + encodeURIComponent(location.origin + "/"));
   });
-  showCloudError("正在验证身份并连接私有数据库…"); $$('cloudRetryBtn').disabled = true; await enterCloudApp();
+  await enterCloudApp();
 }
 document.addEventListener("DOMContentLoaded", boot);
 function suspendPrivateSession(){
