@@ -5,3 +5,18 @@
 .env
 .env.*
 !.env.example
+
+# Private runtime data and migration artifacts; never commit user content.
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.backup
+node_modules/
+local/
+data/
+backups/
+migration-data/
+wishlist-*.json
+*wishlist*backup*.json
+想看清单备份-*.json

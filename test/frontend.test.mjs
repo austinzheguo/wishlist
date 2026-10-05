@@ -1,0 +1,86 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { runInNewContext } from "node:vm";
+
+const html=fs.readFileSync(path.resolve(import.meta.dirname,"../index.html"),"utf8");
+const script=[...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].at(-1)?.[1];
+
+class Element {
+  constructor(){ this.textContent=""; this.disabled=false; this.dataset={}; this.hidden=false; this.inert=false; this.children=[]; const set=new Set(["hidden"]); this.classList={add:x=>set.add(x),remove:x=>set.delete(x),contains:x=>set.has(x),toggle:(x,on)=>on?set.add(x):set.delete(x)}; }
+  replaceChildren(){ this.children=[]; }
+}
+function vmFixture(fetch){
+  const elements=new Map(["authGate","appShell","cloudErrorMessage","cloudErrorGate","cloudRetryBtn","conflictWrap","toasts","syncState","syncRetryBtn","syncConflictBtn","syncPlace","storagePlace","signOutBtn","syncLastSuccess"].map(id=>[id,new Element()]));
+  const sessionStorage={getItem:()=>null,setItem(){},removeItem(){}};
+  const context={document:{getElementById:id=>elements.get(id),addEventListener(){},title:"Wishlist",visibilityState:"visible"},window:{addEventListener(){}},sessionStorage,console:{warn(){},error(){}},fetch,AbortController,AbortSignal,Date,URL,Blob,crypto:{randomUUID:()=>"fixture-request-id"},setTimeout,clearTimeout,setInterval,clearInterval,location:{reload(){},assign(){}},Intl,JSON,Math,Number,String,Array,Object,Promise,RegExp,Set,Map};
+  runInNewContext(script,context);
+  return {context,elements};
+}
+
+test("single-file frontend JavaScript parses and does not persist private list data locally", () => {
+  assert.ok(script); assert.doesNotThrow(()=>new Function(script));
+  assert.doesNotMatch(script,/localStorage|SUPABASE_CONFIG|publishableKey|service_role/i);
+  assert.match(script,/const CLOUD_ENABLED = true/);
+});
+
+test("database failure has a visible, password-free retry path", () => {
+  assert.match(html,/id="cloudErrorGate"/);
+  assert.match(html,/id="cloudErrorMessage"/);
+  assert.match(html,/id="cloudRetryBtn"[^>]*>重试<\/button>/);
+  assert.match(script,/云端数据库暂时无法连接/);
+  assert.match(script,/async function retryCloudApp\(/);
+  assert.match(script,/if \(response\.status === 401\)/);
+});
+
+test("read-only preview is shown and local edit/import/save paths are guarded", () => {
+  assert.match(script,/privateReadOnly = session\.readOnly === true/);
+  assert.match(script,/只读预览：不会保存修改/);
+  assert.match(script,/if \(privateReadOnly\) return;\s*if \(CLOUD_ENABLED/);
+  for (const name of ["mutate", "removeItem", "undoLastDelete", "openAdd", "openEdit", "saveModal", "setCoverValue", "doImportFile"])
+    assert.match(script,new RegExp(`function ${name}\\([^)]*\\)\\s*\\{\\s*if \\(privateReadOnly\\)`));
+});
+
+test("simulated API outage renders the failure card and enables retry", async () => {
+  let calls=0;
+  const {context,elements}=vmFixture(async()=> ++calls===1 ? {ok:true,status:200,json:async()=>({expiresAt:Date.now()+60000})} : {ok:false,status:503});
+  context.showCloudError("云端数据库暂时无法连接。");
+  assert.equal(elements.get("cloudErrorGate").classList.contains("hidden"),false);
+  assert.equal(elements.get("cloudErrorMessage").textContent,"云端数据库暂时无法连接。");
+  await context.retryCloudApp();
+  assert.equal(elements.get("cloudErrorGate").classList.contains("hidden"),false);
+  assert.equal(elements.get("cloudRetryBtn").textContent,"重试");
+  assert.equal(elements.get("cloudRetryBtn").disabled,false);
+});
+
+test("suspended delayed data response cannot repopulate private state", async () => {
+  let resolveFetch;
+  const {context}=vmFixture(()=>new Promise(resolve=>{resolveFetch=resolve;}));
+  const pending=context.loadCloudData();
+  runInNewContext("privateSessionActive=true",context);
+  context.suspendPrivateSession();
+  resolveFetch({ok:true,status:200,json:async()=>({revision:99,updatedAt:"fixture",items:[{id:"fixture",title:"synthetic",platforms:[]}],optout:[]})});
+  await pending;
+  assert.equal(runInNewContext("state.items.length",context),0);
+  assert.equal(runInNewContext("cloudRevision",context),null);
+  assert.equal(runInNewContext("privateSessionActive",context),false);
+});
+
+test("restored draft cannot be overwritten by a new edit and recovery controls escape inert app", () => {
+  const {context,elements}=vmFixture(async()=>({ok:false,status:503}));
+  runInNewContext('conflictSnapshot={data:{items:[{id:"original-draft"}]}}; privateSessionActive=true; scheduleRemoteSave([{id:"new-edit"}]);',context);
+  assert.equal(runInNewContext("conflictSnapshot.data.items[0].id",context),"original-draft");
+  assert.match(html,/<\/div>\s*<!-- Keep recovery actions outside the inert application while an unsynced draft is pending\. -->\s*<\/div>\s*<div class="mask2 hidden" id="conflictWrap"/);
+  runInNewContext("showApp()",context);
+  assert.equal(elements.get("appShell").inert,true);
+  assert.equal(elements.get("conflictWrap").classList.contains("hidden"),true);
+});
+
+test("existing import, export, cover and conflict surfaces remain present", () => {
+  assert.match(script,/function buildExport\(/);
+  assert.match(script,/function doImportFile/);
+  assert.match(script,/function migrateCoversToThumb/);
+  assert.match(script,/function rememberConflict\(/);
+  assert.match(script,/发现跨设备冲突/);
+});

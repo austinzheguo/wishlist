@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.env.*
+*.sqlite
+*.sqlite-*
+*.db
+*.backup
+*.json
+local/
+migration-data/
+data/
+backups/
+node_modules/

@@ -1,0 +1,10 @@
+[Unit]
+Description=Create and verify a consistent Wishlist SQLite backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker compose --project-directory /opt/wishlist --profile backup run --rm --no-deps backup
+TimeoutStartSec=10min
+UMask=0077

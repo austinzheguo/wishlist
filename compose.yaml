@@ -1,0 +1,61 @@
+services:
+  wishlist:
+    build:
+      context: .
+    image: wishlist-private:1
+    container_name: wishlist-private
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.50
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev,mode=1777
+    ports:
+      - "127.0.0.1:38127:3000"
+    volumes:
+      - /var/lib/wishlist:/data
+    environment:
+      PUBLIC_ORIGIN: https://wishlist.orbitspaces.top
+      SQLITE_PATH: /data/wishlist.sqlite
+      ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:?set in protected runtime environment}
+      ACCESS_AUDIENCE: ${ACCESS_AUDIENCE:?set in protected runtime environment}
+      READ_ONLY: "${READ_ONLY:-true}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  backup:
+    image: wishlist-private:1
+    profiles: ["backup"]
+    entrypoint: ["node", "backup.mjs"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 16
+    mem_limit: 128m
+    cpus: 0.25
+    tmpfs:
+      - /tmp:size=8m,noexec,nosuid,nodev,mode=1777
+    volumes:
+      - /var/lib/wishlist:/data:ro
+      - /var/lib/wishlist/backups:/backups
+    environment:
+      SQLITE_PATH: /data/wishlist.sqlite
+      BACKUP_DIR: /backups
+      BACKUP_KEEP: "14"
