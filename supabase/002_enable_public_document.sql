@@ -1,4 +1,6 @@
--- 第 2 步（当前线上配置）：允许未登录访客查看和修改“指定的一份”清单。
+-- HISTORICAL ONLY: applied before the 2026-10-06 private cutover. Do not rerun.
+-- Re-running this script would reopen anonymous access to the wishlist.
+-- 第 2 步（历史配置）：允许未登录访客查看和修改“指定的一份”清单。
 -- 本文件保留实际执行的公开文档 UID，供日后审计和重新部署时核对。
 -- UID 不是密码；它只指定可被匿名访问的那一行。不要在本文件写入 service_role、secret key、数据库密码或账号密码。
 -- 当前项目已经执行过此配置；日常维护不要重复运行。仅在重新部署或明确调整公开权限时使用。

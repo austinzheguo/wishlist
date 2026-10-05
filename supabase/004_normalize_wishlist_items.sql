@@ -1,5 +1,7 @@
+-- HISTORICAL migration, already applied before the 2026-10-06 private cutover.
+-- Do not rerun this public-mode script on the current project; see 005_revoke_anonymous_access.sql.
 -- v1.4.0 数据结构迁移：将 wishlist_data.data.items 拆成逐条 wishlist_items。
--- 当前仍保持公开模式的读写权限，便于先完成结构迁移；后续可单独收紧 anon 的 UPDATE/DELETE。
+-- 当时暂时保持公开模式的读写权限，便于先完成结构迁移；现已通过 005 撤销匿名访问。
 -- 旧表 wishlist_data 保留为兼容快照与回退备份，不删除任何现有数据。
 
 create table if not exists public.wishlist_items (

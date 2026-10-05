@@ -1,9 +1,12 @@
 # 想看清单 2026：运行、恢复与迁移
 
-## 现行状态（迁移未验收）
+## 现行状态（2026-10-06 正式切换）
 
-- 旧站：[https://austinzheguo.github.io/wishlist/](https://austinzheguo.github.io/wishlist/)。它仍是 GitHub Pages 静态网页，连接 Supabase 项目 `wishlist2026`；其 RLS 虽启用，但匿名策略目前仍允许指定清单读写。因此旧站**不是私有入口**。
-- 目标站：[https://wishlist.orbitspaces.top](https://wishlist.orbitspaces.top)。只读预览已部署，浏览器确认到达 Cloudflare OTP 页；登录验收仍待所有者。架构为 Cloudflare Access 邮件 OTP（沿用原所有者身份）→ Orange Tunnel（`cloudflared` 与应用均验证 JWT）→ 独立、loopback-only 容器 → `/var/lib/wishlist` 中的 SQLite。此预览导入的是迁移快照；正式写入前必须冻结旧匿名写并再取最终快照。
+- 旧入口：[https://austinzheguo.github.io/wishlist/](https://austinzheguo.github.io/wishlist/) 已关闭 GitHub Pages 发布；实测返回 404，仓库源码仍保留。
+- 正式入口：[https://wishlist.orbitspaces.top](https://wishlist.orbitspaces.top)。Cloudflare Access 邮件 OTP 仅允许原所有者；Orange Tunnel 与应用两侧均验证 Access JWT；WishList 独立 loopback-only 容器使用 `/var/lib/wishlist/wishlist.sqlite`。本人在内置浏览器与 Chrome 完成 OTP 和 57 条清单验收。
+- 原 Supabase 项目 `wishlist2026` 保留，不删除表、行或项目。anon 对 `wishlist_items`、`wishlist_data` 的表权限及匿名 RLS 策略已撤销；两表 RLS 仍开启，7 条 authenticated 原策略保留。RPC 仍为 `SECURITY INVOKER`，anon 与 PUBLIC 均无 EXECUTE；匿名 REST 对两表读写和 RPC 实测均返回 401。
+- 冻结后的 Supabase 源表与兼容快照均为 57 条、revision 19、逐字段差异 0；条目及封面偏好摘要与 SQLite 一致。桌面 smoke test 只用合成条目，新增后删除，原 57 条和 6 项封面偏好未变；测试写入使当前 SQLite revision 为 21，旧 Supabase revision 19 与原数据保留。
+- 手机实际使用尚未验收，按用户选择作为切换后补测事项，不能记为 PASS。
 - 目标容器资源上限：256 MiB 内存、0.5 CPU。运行目录与 Hermes/GEL 数据目录分离；不重启主机、Docker daemon 或无关服务。
 - 目标浏览器不保存清单到 localStorage。未同步稿仅作标签页会话恢复；必须先登录并读取服务器当前 revision，先下载恢复稿，再显式读取最新版。登录过期/退出会清空恢复稿与当前页面数据。切后台、BFCache 返回时隐藏私有页面并重新请求验证。
 
@@ -12,20 +15,20 @@
 - 看到数据库暂不可用时使用页面“重试”；失败 UI 不要求清单密码。
 - 页面顶部同步状态显示等待、同步中、成功、失败或冲突。同步失败时不要刷新，先导出备份；跨设备冲突先下载恢复稿，再读取服务器最新版。
 - 删除后可在 60 秒内撤销；撤销状态保存在私有 SQLite，不写入浏览器持久存储。
-- 迁移验收完成前，旧 GitHub Pages 仍公开可读写。避免在切换期间于新旧站同时编辑。
+- 当前只有私有 SQLite 是应用写入端；旧 Pages 已退役，Supabase 匿名入口已关闭。
 
-## 迁移切换门槛
+## 切换验收记录
 
-1. 源核验：原 Supabase 项目健康；`wishlist_items` 与 `wishlist_data.data.items` 字段级一致；记录 revision、时间戳、RLS 与策略摘要。只读校验不改原库。
-2. 目标预览：在新站配置 owner-only OTP、Tunnel JWT 校验和 SQLite 后，先完成合成数据、安全检查；所有者完成真实登录和清单验收。预览保持只读，旧端仍是唯一写端和回退基线。
-3. 最终单写窗口（新端首次正式写入前）：短时冻结旧匿名写/RPC，重新导出最终源快照，逐字段导入并比较条目摘要、cover 偏好与 revision；确认目标端是唯一写端后再开放其写入。冻结前不得把预览用户验收误当成切换完成。
-4. 用户验收：所有者亲自完成邮件 OTP，确认展示的清单数量、同步状态及关键交互；遇到内容差异则停止切换并回退，不能自动合并。
-5. 验收通过后，撤销旧 Supabase 全部匿名读写策略及匿名 RPC 权限，并停止旧 Pages 应用入口；原数据保留，不删项目/表/数据。验证旧地址与匿名 REST/RPC 不再返回清单内容。
+1. **数据门槛通过**：冻结匿名写/RPC 后，Supabase 源表与兼容快照均为 57 条、revision 19、逐字段差异 0；条目和封面偏好摘要与 SQLite 一致后才开放新端写入。
+2. **单写通过**：目标容器 `READ_ONLY=false`；本人完成桌面 OTP；合成条目经真实新增、同步、删除后，活动清单恢复 57 条，撤销窗口过期并清空。
+3. **旧 API 关闭通过**：匿名 direct REST GET/POST 两表及 RPC POST 均返回 401。仅撤销 anon 授权与匿名策略；保留数据、表、函数、RLS 和 authenticated 原策略。PUBLIC 函数执行权也确认关闭。
+4. **旧入口退役通过**：GitHub Pages API 曾显示来源为 `main:/`、最近构建成功；随后只删除 Pages 发布配置，保留仓库源码；旧 URL 实测返回 404。
+5. **待办**：手机登录与实际使用待用户补测，不计入本轮 PASS。
 
 ## 备份和恢复
 
-- Orange 上 Wishlist 专属 systemd timer 每日约 03:20 UTC 启动独立 backup 容器，保留最近 14 份；每次执行 SQLite integrity check 与流式 SHA-256。首次备份和隔离恢复已验证；轮转需要随定时执行继续观察。
-- 分开记录三项：Orange VPS 本地滚动备份、当前 Mac Git 外受限目录中的首份人工副本及隔离恢复验证、未来自动异机同步（尚未配置）。VPS 与 Mac 的人工副本是不同设备，但单份人工复制不等于自动异机备份服务。
+- Orange 上 Wishlist 专属 systemd timer 每日约 03:20 UTC 启动独立 backup 容器，保留最近 14 份；本次切换后手动备份通过 integrity/hash 校验。轮转仍需随定时运行继续观察。
+- 切换后 SQLite 备份已复制到 Mac Git 外受限目录；文件 mode 0600、目录 mode 0700。Mac 隔离副本 integrity/readback 通过，57 条、revision 21、哈希与 Orange 一致。未来自动异机同步尚未配置；人工复制不等于自动备份服务。
 - 私有 JSON/SQLite/WAL/SHM/备份和迁移数据均不得提交 Git；`.gitignore` 与 `.dockerignore` 应保持覆盖这些路径。
 
 ## 开发与发布
@@ -35,8 +38,8 @@
 3. 逐项审核 `git diff`，确认无清单 JSON、SQLite 文件、访问邮箱、token、密码、publishable/service key。
 4. 提交并推送审阅分支；独立审阅通过、用户登录验收和阶段门槛满足后才切换生产。
 
-## Supabase 历史结构（只读回退基线）
+## Supabase 历史结构（数据保留，不作应用回退端）
 
 - `supabase/003_add_wishlist_revision.sql` 增加版本号用于冲突检测。
 - `supabase/004_normalize_wishlist_items.sql` 把清单拆为 `wishlist_items`，并保留 `wishlist_data` 兼容快照；原 RPC 为 `replace_wishlist_items(uuid, bigint, jsonb)`。
-- 当前迁移任务不对原库执行 schema/RLS 修改；匿名写入冻结和最终匿名访问撤销只按上面的分阶段门槛进行。
+- 2026-10-06 已撤销 anon 对两表的全部表权限与旧匿名 policies，并从 anon/PUBLIC 撤销 RPC EXECUTE；authenticated 原策略、RLS、表、函数及数据仍保留。详细留痕见 `supabase/005_revoke_anonymous_access.sql`。

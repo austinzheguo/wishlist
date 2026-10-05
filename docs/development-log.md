@@ -2,7 +2,18 @@
 
 这个文件记录“想看清单”项目已经完成的整理、后续准备做的改进，以及每项工作可能遇到的技术问题。它是项目的开发备忘，不替代 `README.md`、日常操作说明或 Supabase 迁移脚本。
 
-## 2026-10-05 · 私有化迁移状态
+## 2026-10-06 · 正式单写切换（当前）
+
+- 用户在 Codex 内置浏览器与外部 Chrome 完成 Access 邮件 OTP，亲自确认桌面清单 57 条完整并明确授权切换；手机补测延期，仍是待办。
+- 冻结旧匿名写/RPC 后最终核验 Supabase 原项目：`wishlist_items` 和 `wishlist_data.data.items` 均 57 条、revision 19、字段级差异 0；SQLite 逐条字段摘要与源一致，6 项封面偏好摘要也一致。
+- 新 SQLite 已成为唯一应用写端。正式开写后只用一个明确标记的合成条目做桌面新增/同步/删除验收；测试条目已移除，活动列表回到 57 条、偏好不变，删除撤销数据已过期清空。因真实 smoke test，SQLite revision 当前为 21；旧 Supabase revision 19 与原数据仍保留。
+- 原 Supabase 未删除项目、表、数据或 RPC。匿名对两表的全部表授权和 7 条匿名 RLS 策略已撤销；RLS 仍开启，7 条 authenticated policies 保留；RPC 仍为 `SECURITY INVOKER`，anon/PUBLIC EXECUTE 均关闭。匿名 REST 对两表 GET/POST 及 RPC POST 实测均返回 401。
+- GitHub Pages 发布配置已删除，仓库及源码保留；原 URL 实测 404。新私有站未登录根页和 API 均 302 转入 Access；已登录桌面页同步状态正常、显示 57/57。
+- Wishlist 专属容器健康；资源限额仍为 256 MiB / 0.5 CPU，本次 idle 快照约 20.44 MiB、CPU 0.00%。Docker、sing-box、Hermes Dashboard、Cloudflare Tunnel 均 active，`hermes-austin` 仍运行；没有重启其他服务。
+- 切换后 Orange 滚动备份服务成功生成 SQLite 备份；Mac Git 外受限目录的新副本 mode 0600，父目录 0700。Orange 与 Mac 哈希一致，57 条、revision 21；在新建隔离临时目录恢复副本并通过 SQLite integrity/readback，之后清理临时恢复目录。自动异机同步仍未配置。
+- 本节为当前状态；下节 2026-10-05 预览阶段记录保留为当时证据，不代表现在仍只读或匿名开放。
+
+## 2026-10-05 · 私有化迁移预览阶段记录（历史）
 
 - 迁移目标：Orange VPS 私有容器（Node + SQLite）和 Cloudflare Access 邮件 OTP。只读预览已部署于 `https://wishlist.orbitspaces.top`；Cloudflare 登录页已由浏览器确认可达，尚待所有者完成 OTP 与清单验收。旧站仍是唯一写端。
 - 原 Supabase 项目 `wishlist2026` 当前为健康状态；只读核验确认两表 RLS 仍启用、公开策略原样存在，RPC `replace_wishlist_items(uuid, bigint, jsonb)` 存在且不是 `SECURITY DEFINER`。
@@ -21,7 +32,7 @@
 - 项目地址：[GitHub 仓库](https://github.com/austinzheguo/wishlist)
 - 线上地址：[GitHub Pages](https://austinzheguo.github.io/wishlist/)
 - 历史架构：GitHub Pages 托管单文件 `index.html`，Supabase 逐条保存清单并保留兼容快照。
-- 历史模式：公开可编辑；迁移验收完成前旧站仍处于此状态，不得视为私有。
+- 截至 2026-10-05 的历史模式为公开可编辑；之后已完成退役，不代表当前状态。
 - 安全边界：service_role / secret key、数据库密码、访问邮箱和个人清单数据绝不进入源码或 Git。
 
 ## 已完成记录
@@ -69,7 +80,7 @@
 - 将原来 `wishlist_data.data.items` 中的 47 条条目迁移到 `wishlist_items`，每个条目独立一行。
 - 保留 `wishlist_data` 作为兼容快照和回退备份，未删除原有数据。
 - 前端读取逐条记录，并通过 `replace_wishlist_items` 在事务中完成版本校验、保存和快照更新。
-- 当前仍保持公开模式的读写权限，暂不改变访客现有功能；后续可在独立版本中把匿名权限收紧为只允许新增。
+- v1.4.0 当时暂时保留公开读写权限，便于先完成结构迁移；2026-10-06 已在 005 中撤销匿名访问。
 - 已验证：新旧条目数量均为 47；错误版本号会返回冲突且不改数据；公开 Data API 可以读取新表。
 
 ## 后续计划
