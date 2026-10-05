@@ -9,10 +9,11 @@
 - 源表与兼容文档快照字段级一致；当前快照计数 57，revision 19。通过网页导出的本地保护快照完成真实数据临时导入/readback，条目摘要 SHA-256 相同；cover 偏好随迁移一并校验。未修改原项目数据或策略。
 - 新版已移除 Supabase 客户端配置、内置清单种子/封面映射和浏览器 localStorage 写入；Cloudflare Access JWT 在 `cloudflared` 与应用两侧验证，目标持久路径设计为 `/var/lib/wishlist`。
 - 合成前端、API、认证、幂等、只读预览、备份恢复和迁移字段严格校验共 16 项测试通过。更新后 VPS 容器健康，loopback 未认证页面/API 均返回 401；空闲约 17.82 MiB / 256 MiB，CPU 约 0.05%，未 OOM。Docker、sing-box、Hermes Dashboard、Cloudflare Tunnel systemd units 均 active；`hermes-austin` 仍 running，未重启任何既有服务。修复刷新时短暂误显示“数据库不可用”的状态文案：加载中显示“正在加载清单”，只有 API 错误才显示可重试故障卡片。
+- 有界资源峰值实测：同一已部署镜像、256 MiB / 0.5 CPU、`network none`，使用标记的备份副本及进程内合成 JWT 完成 HTML/data 读取、57 条同内容保存、幂等重试和读回；摘要一致，645,819-byte 保存请求成功。进程 RSS 采样峰值 96,432,128 bytes（约 92 MiB），cgroup `memory.peak` 47,521,792 bytes（约 45 MiB），cgroup CPU 用量 311,062 µs，exit 0 / OOM false。宿主可用内存前后约 4.17 / 4.10 GiB。测试容器与一次性副本已清理；生产库复核仍为 57 条、revision 19、源摘要一致。该结果是隔离副本实测，不代表真实浏览器/网络写入验收。
 - Orange 本地滚动备份与 Mac Git 外 `~/Library/Application Support/Wishlist2026/backups/` 首份副本均验证为 57 条、revision 19；隔离副本 `integrity_check=ok`，三处 SHA-256 一致。未来自动异机同步未配置。
 - Orange 已启用 Wishlist 专属每日 03:20 UTC systemd 备份 timer（随机延迟最多 10 分钟），下次计划 2026-10-06 03:21 UTC；systemd oneshot 手动验收成功（exit 0），目前已有两份已核验滚动快照，未来轮转尚待定时运行积累验证。
-- Cloudflare 独立 Access 应用仅允许原 owner 邮箱 + 原一次性验证码身份提供方；Tunnel 路由通过 JWT 严格校验且保留 Hermes 前后路由及 404 fallback。DNS 已代理，浏览器已到 Cloudflare OTP 页。实际 OTP 登录与数据可视验收仍待用户。
-- 用户报告：内置浏览器与 Chrome 均已完成 OTP 登录且页面正常；尚未确认手机访问及清单逐条/数量核对（手机暂时无法测试）。加载提示修复已部署并仅重建 Wishlist 容器，需刷新后复验。
+- Cloudflare 独立 Access 应用仅允许原 owner 邮箱 + 原一次性验证码身份提供方；Tunnel 路由通过 JWT 严格校验且保留 Hermes 前后路由及 404 fallback。DNS 已代理；用户报告内置浏览器与 Chrome 均完成 OTP 登录且页面正常。手机暂时无法测试，清单条目数量/完整性尚待确认。
+- 加载提示修复已部署并仅重建 Wishlist 容器；需要在已登录浏览器刷新后复验最新版本状态。
 - 正式切换门槛：先完成只读预览登录验收；然后短时冻结旧匿名写/RPC、重新导出最终源快照并导入/核验，之后才把新端改为唯一写端。验收前保留旧端回退基线；最终验收后才关闭旧匿名读取并退役 Pages。未来自动异机同步另行规划。
 
 ## 原始项目基线（历史记录）
