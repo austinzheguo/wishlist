@@ -12,7 +12,7 @@
 
 ## 2026-10-07 登录便利性调整
 
-用户授权本人 Google 登录，原 OTP 备用保留。Cloudflare Google IdP 已接入，应用 allowed_idps 仅 Google 与原 OTP；新增 Google Allow 策略要求指定本人邮箱＋Google 登录方法同时匹配；原 OTP 策略未改。应用及两策略独立 API 读回通过。Access 会话仍为 24h，到期可选 Google，通常复用浏览器 Google 登录，无需邮件验证码。
+用户授权本人 Google 登录，原 OTP 备用保留。Cloudflare Google IdP 已接入，应用 allowed_idps 仅 Google 与原 OTP；新增 Google Allow 策略要求指定本人邮箱＋Google 登录方法同时匹配；原 OTP 策略未改。应用及两策略独立 API 读回通过。用户随后授权把 Google 策略会话延长至 720h（30 天），独立 API 读回通过；策略覆盖应用默认 24h。原 OTP 策略及身份限制未改。Google 会话到期可选 Google，通常复用浏览器 Google 登录，无需邮件验证码。已签发的旧会话不保证自动延长，必要时到期重登一次。
 
 授权 URL scope 为 email profile openid，无 Gmail 读取权限；同一 IdP 的 Chrome 实际 Google 登录回调到 Hermes 看板通过。Wishlist 源码验证不依赖旧邮箱，只验证 Access JWT 签名、issuer、audience 和时效，无源站更改。匿名根入口/API 实测 302。Chrome 既有 Wishlist 会话实际读取数据库成功；当次页面显示 59 条（当前页面快照，非重新核对原 57 条数据）。Wishlist 新 Google 会话内容、修改与手机使用仍待用户验收，不能用既有 OTP 会话替代。
 
