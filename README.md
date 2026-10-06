@@ -9,7 +9,7 @@
 ## 当前状态
 
 - 当前入口：Cloudflare Access 本人 Google 登录＋原所有者邮件 OTP 备用→ Orange Tunnel（边缘及 Tunnel 两侧验证 Access JWT）→ VPS loopback 上独立 Node/SQLite 容器。本人已在内置浏览器和 Chrome 完成 OTP 与 57 条清单验收。
-- 手机实际使用尚未验收，按用户选择作为切换后的补测事项；不能记为 PASS。
+- 2026-10-07 用户确认手机正常使用，手机补测通过（用户报告）。
 - 原 Supabase 项目及 57 条数据保留；匿名表授权、匿名 RLS 策略和 anon/PUBLIC RPC 执行权限均已撤销，两表 RLS 仍开启。它不再是应用写入回退端。
 - 目标数据目录为 `/var/lib/wishlist`，与 Hermes/GEL 数据目录隔离；容器限制为 256 MiB 内存、0.5 CPU。
 - 旧站发布与 Supabase 匿名 API 已退役；正式 SQLite 数据与所有本地私密备份都不进入 Git。

@@ -6,7 +6,7 @@
 - 正式入口：[https://wishlist.orbitspaces.top](https://wishlist.orbitspaces.top)。Cloudflare Access 于 2026-10-07 增加本人指定 Google 登录（精确邮箱且必须匹配 Google IdP），原所有者邮件 OTP 备用保留；Orange Tunnel 与应用两侧均验证 Access JWT；WishList 独立 loopback-only 容器使用 `/var/lib/wishlist/wishlist.sqlite`。本人在内置浏览器与 Chrome 完成 OTP 和 57 条清单验收。
 - 原 Supabase 项目 `wishlist2026` 保留，不删除表、行或项目。anon 对 `wishlist_items`、`wishlist_data` 的表权限及匿名 RLS 策略已撤销；两表 RLS 仍开启，7 条 authenticated 原策略保留。RPC 仍为 `SECURITY INVOKER`，anon 与 PUBLIC 均无 EXECUTE；匿名 REST 对两表读写和 RPC 实测均返回 401。
 - 冻结后的 Supabase 源表与兼容快照均为 57 条、revision 19、逐字段差异 0；条目及封面偏好摘要与 SQLite 一致。桌面 smoke test 只用合成条目，新增后删除，原 57 条和 6 项封面偏好未变；测试写入使当前 SQLite revision 为 21，旧 Supabase revision 19 与原数据保留。
-- 手机实际使用尚未验收，按用户选择作为切换后补测事项，不能记为 PASS。
+- 2026-10-07 用户确认手机正常使用，切换后手机补测通过（用户报告）。
 - 目标容器资源上限：256 MiB 内存、0.5 CPU。运行目录与 Hermes/GEL 数据目录分离；不重启主机、Docker daemon 或无关服务。
 - 目标浏览器不保存清单到 localStorage。未同步稿仅作标签页会话恢复；必须先登录并读取服务器当前 revision，先下载恢复稿，再显式读取最新版。登录过期/退出会清空恢复稿与当前页面数据。切后台、BFCache 返回时隐藏私有页面并重新请求验证。
 
@@ -14,7 +14,7 @@
 
 用户授权本人 Google 登录，原 OTP 备用保留。Cloudflare Google IdP 已接入，应用 allowed_idps 仅 Google 与原 OTP；新增 Google Allow 策略要求指定本人邮箱＋Google 登录方法同时匹配；原 OTP 策略未改。应用及两策略独立 API 读回通过。用户随后授权把 Google 策略会话延长至 720h（30 天），独立 API 读回通过；策略覆盖应用默认 24h。原 OTP 策略及身份限制未改。Google 会话到期可选 Google，通常复用浏览器 Google 登录，无需邮件验证码。已签发的旧会话不保证自动延长，必要时到期重登一次。
 
-授权 URL scope 为 email profile openid，无 Gmail 读取权限；同一 IdP 的 Chrome 实际 Google 登录回调到 Hermes 看板通过。Wishlist 源码验证不依赖旧邮箱，只验证 Access JWT 签名、issuer、audience 和时效，无源站更改。匿名根入口/API 实测 302。Chrome 既有 Wishlist 会话实际读取数据库成功；当次页面显示 59 条（当前页面快照，非重新核对原 57 条数据）。Wishlist 新 Google 会话内容、修改与手机使用仍待用户验收，不能用既有 OTP 会话替代。
+授权 URL scope 为 email profile openid，无 Gmail 读取权限；同一 IdP 的 Chrome 实际 Google 登录回调到 Hermes 看板通过。Wishlist 源码验证不依赖旧邮箱，只验证 Access JWT 签名、issuer、audience 和时效，无源站更改。匿名根入口/API 实测 302。Chrome 既有 Wishlist 会话实际读取数据库成功；当次页面显示 59 条（当前页面快照，非重新核对原 57 条数据）。2026-10-07 用户随后确认手机 Hermes 和 Wishlist 均可正常使用，手机实际使用验收通过（用户报告）。未逐项报告登录方式或增删改步骤，不单独追认这些分项，也不以此证明 30 天持续有效。
 
 网络资产登录配置日志由 [Proxy Lab](https://github.com/austinzheguo/Proxy-Lab/blob/main/logs/2026-10-07-access-login.md) 维护。OAuth 密钥、完整账号、清单内容和私有配置不入 Git。回退时移除新增 Google 策略并恢复应用仅 OTP，原 OTP 策略和源站数据均保留。
 
@@ -31,7 +31,7 @@
 2. **单写通过**：目标容器 `READ_ONLY=false`；本人完成桌面 OTP；合成条目经真实新增、同步、删除后，活动清单恢复 57 条，撤销窗口过期并清空。
 3. **旧 API 关闭通过**：匿名 direct REST GET/POST 两表及 RPC POST 均返回 401。仅撤销 anon 授权与匿名策略；保留数据、表、函数、RLS 和 authenticated 原策略。PUBLIC 函数执行权也确认关闭。
 4. **旧入口退役通过**：GitHub Pages API 曾显示来源为 `main:/`、最近构建成功；随后只删除 Pages 发布配置，保留仓库源码；旧 URL 实测返回 404。
-5. **待办**：手机登录与实际使用待用户补测，不计入本轮 PASS。
+5. **手机补测通过**：2026-10-07 用户确认手机想看清单正常使用（用户报告）；未逐项列出增删改操作，不单独追认分项。
 
 ## 备份和恢复
 
