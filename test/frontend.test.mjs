@@ -116,3 +116,35 @@ test("existing import, export, cover and conflict surfaces remain present", () =
   assert.match(script,/function rememberConflict\(/);
   assert.match(script,/发现跨设备冲突/);
 });
+
+
+test("30-day Access expiry uses bounded timers and expires only at the real deadline", () => {
+  const {context}=vmFixture(async()=>({ok:false,status:503}));
+  let clock=Date.now(), expired=0;
+  const timers=[];
+  context.Date=class extends Date { static now(){ return clock; } };
+  context.setTimeout=(callback,delay)=>{ timers.push({callback,delay}); return timers.length; };
+  context.clearTimeout=()=>{};
+  context.expirePrivateSession=()=>{ expired++; };
+  const deadline=clock+30*24*60*60*1000;
+  context.schedulePrivateSessionExpiry(deadline);
+  assert.equal(expired,0);
+  assert.equal(timers[0].delay,2147483647);
+  clock+=timers[0].delay; timers[0].callback();
+  assert.equal(expired,0);
+  assert.equal(timers[1].delay,deadline-clock);
+  clock=deadline; timers[1].callback();
+  assert.equal(expired,1);
+  assert.equal(timers.length,2);
+});
+
+test("invalid and elapsed Access deadlines expire without scheduling a timer", () => {
+  const {context}=vmFixture(async()=>({ok:false,status:503}));
+  let expired=0;
+  context.expirePrivateSession=()=>{ expired++; };
+  context.setTimeout=()=>{ throw new Error("Expired sessions must not be scheduled"); };
+  context.clearTimeout=()=>{};
+  context.schedulePrivateSessionExpiry(Date.now()-1000);
+  context.schedulePrivateSessionExpiry("invalid");
+  assert.equal(expired,2);
+});

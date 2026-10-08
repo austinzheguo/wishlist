@@ -18,6 +18,14 @@
 
 网络资产登录配置日志由 [Proxy Lab](https://github.com/austinzheguo/Proxy-Lab/blob/main/logs/2026-10-07-access-login.md) 维护。OAuth 密钥、完整账号、清单内容和私有配置不入 Git。回退时移除新增 Google 策略并恢复应用仅 OTP，原 OTP 策略和源站数据均保留。
 
+## 2026-10-08 Chrome 登录误过期修复
+
+实际复现：Chrome 页面显示“登录已过期”，点击“重新验证”加载后又立即回到过期状态。Google Access 会话已设为30天，但前端直接把剩余有效期作为 setTimeout 延迟；超过2147483647毫秒（约24.9天）时浏览器定时器溢出，错误触发页面过期清除。相关限制见[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/setTimeout#maximum_delay_value)。
+
+改为按绝对 expiresAt 分段等待，每段不超过定时器上限，到点重新检查；保持真正到期/401的私有数据清除和重新认证路径。不调整Access权限、Google/OTP策略、30天有效期或源站认证。新增30天计时及真实/非法到期边界测试，全套18项通过。部署前现有SQLite备份成功；仅替换网页并重建Wishlist容器，数据库挂载不变，Hermes未重启；线上文件摘要与提交源码一致，容器healthy。
+
+Chrome两个原有标签页刷新后均显示“已从私有数据库读取”，appShell可见、过期层隐藏；未执行清单增删改，未追认为30天持续使用验收。旧程序镜像及旧HTML保留在主机私有恢复目录；程序回退不覆盖数据库。主机临时部署脚本已清理。
+
 ## 日常操作
 
 - 看到数据库暂不可用时使用页面“重试”；失败 UI 不要求清单密码。

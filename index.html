@@ -1686,6 +1686,22 @@ function expirePrivateSession(){
   clearPrivateSession(); showCloudError("登录状态已失效。请重新验证后继续使用。", "登录已过期");
   const btn = $$('cloudRetryBtn'); btn.textContent = "重新验证"; btn.dataset.reauthenticate = "true";
 }
+// Browser timers overflow beyond about 24.9 days. Recheck the absolute expiry
+// after each bounded wait so a 30-day Access session cannot expire immediately.
+function schedulePrivateSessionExpiry(expiresAt){
+  clearTimeout(sessionExpiryTimer);
+  const deadline = Number(expiresAt);
+  function checkExpiry(){
+    const remaining = deadline - Date.now();
+    if (!Number.isFinite(remaining) || remaining <= 0) {
+      sessionExpiryTimer = null;
+      expirePrivateSession();
+      return;
+    }
+    sessionExpiryTimer = setTimeout(checkExpiry, Math.min(remaining, 2147483647));
+  }
+  checkExpiry();
+}
 function showCloudLoading(){
   $$('authGate').classList.add('hidden'); $$('appShell').classList.add('hidden');
   $$('cloudErrorTitle').textContent = "正在加载清单";
@@ -1733,7 +1749,7 @@ async function enterCloudApp(){
     const remaining = Number(session.expiresAt) - Date.now();
     if (!Number.isFinite(remaining) || remaining <= 0) { expirePrivateSession(); return; }
     privateSessionActive = true; privateSessionSuspended = false; cloudUser = { id: "cloudflare-access" };
-    clearTimeout(sessionExpiryTimer); sessionExpiryTimer = setTimeout(expirePrivateSession, remaining); showApp(); init();
+    schedulePrivateSessionExpiry(session.expiresAt); showApp(); init();
     if (conflictSnapshot) openConflictModal();
   } catch (error) {
     if (epoch !== sessionEpoch || error.name === "AbortError") return;
